@@ -208,6 +208,10 @@ class FirestoreService {
       await updateDoc(doc(firestore, 'admin_notifications', id), { isRead: true });
   }
 
+  async deleteSystemNotification(id: string): Promise<void> {
+      await deleteDoc(doc(firestore, 'admin_notifications', id));
+  }
+
   // --- Timetables ---
   async getTimetable(classId: string): Promise<ClassTimetable | undefined> {
       const snap = await getDoc(doc(firestore, 'timetables', classId));

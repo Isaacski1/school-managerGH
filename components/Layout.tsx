@@ -79,6 +79,21 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
       setUnreadCount(prev => Math.max(0, prev - 1));
   };
 
+    const handleDeleteNotification = async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      try {
+        await db.deleteSystemNotification(id);
+        setNotifications(prev => prev.filter(n => n.id !== id));
+        // adjust unread count if needed
+        setUnreadCount(prev => {
+          const removedWasUnread = notifications.find(n => n.id === id && !n.isRead);
+          return removedWasUnread ? Math.max(0, prev - 1) : prev;
+        });
+      } catch (err) {
+        console.error('Failed to delete notification', err);
+      }
+    };
+
   const NavItem = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => {
     const isActive = location.pathname === href;
     return (
@@ -231,11 +246,16 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                                                         </span>
                                                     </div>
                                                 </div>
-                                                {!n.isRead && (
-                                                    <button onClick={(e) => handleMarkRead(n.id, e)} className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded transition-colors shrink-0" title="Mark as read">
-                                                        <Check size={16} />
-                                                    </button>
-                                                )}
+                                                    <div className="flex items-center gap-2">
+                                                      {!n.isRead && (
+                                                        <button onClick={(e) => handleMarkRead(n.id, e)} className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded transition-colors shrink-0" title="Mark as read">
+                                                          <Check size={16} />
+                                                        </button>
+                                                      )}
+                                                      <button onClick={(e) => handleDeleteNotification(n.id, e)} className="text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors shrink-0" title="Delete notification">
+                                                        <X size={16} />
+                                                      </button>
+                                                    </div>
                                             </div>
                                         </div>
                                     ))
