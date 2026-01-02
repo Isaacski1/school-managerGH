@@ -292,7 +292,7 @@ const AdminDashboard = () => {
   }
 
   const PerformanceSection = () => {
-    const totalGrades = Object.values(gradeDistribution).reduce((a, b) => a + b, 0) || 1;
+    const totalGrades = Object.keys(gradeDistribution).reduce((sum, key) => sum + gradeDistribution[key], 0) || 1;
     
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
@@ -302,7 +302,7 @@ const AdminDashboard = () => {
                     <BarChart2 className="w-5 h-5 mr-2 text-red-700"/> Academic Performance Rate ({schoolConfig.currentTerm})
                 </h3>
                 <div className="space-y-4">
-                    {Object.entries(gradeDistribution).map(([grade, count]) => {
+                    {Object.entries(gradeDistribution).map(([grade, count]: [string, number]) => {
                         const percentage = Math.round((count / totalGrades) * 100);
                         // Standard Grade Colors
                         let barColor = 'bg-emerald-500';
