@@ -1,0 +1,301 @@
+import React, { useState, useEffect } from 'react';
+import Layout from '../../components/Layout';
+import { useAuth } from '../../context/AuthContext';
+import { db } from '../../services/mockDb';
+import { Student, Assessment } from '../../types';
+import { CLASSES_LIST, ACADEMIC_YEAR, CURRENT_TERM, calculateGrade, getGradeColor } from '../../constants';
+import { Save } from 'lucide-react';
+
+const AssessmentPage = () => {
+  const { user } = useAuth();
+  const assignedClassIds = user?.assignedClassIds || [];
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+
+  const [students, setStudents] = useState<Student[]>([]);
+  const [subjects, setSubjects] = useState<string[]>([]);
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [assessments, setAssessments] = useState<Record<string, Partial<Assessment>>>({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Score Limits
+  const LIMITS = {
+      testScore: 15,
+      homeworkScore: 15,
+      projectScore: 20,
+      examScore: 100
+  };
+
+  // Initialize selected class
+  useEffect(() => {
+    if (assignedClassIds.length > 0 && !selectedClassId) {
+        setSelectedClassId(assignedClassIds[0]);
+    }
+  }, [assignedClassIds]);
+
+  // Fetch subjects first
+  useEffect(() => {
+    const loadSubjects = async () => {
+        const subs = await db.getSubjects();
+        setSubjects(subs);
+        if (subs.length > 0) {
+            setSelectedSubject(subs[0]);
+        }
+    };
+    loadSubjects();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedClassId || !selectedSubject) return;
+
+    const loadData = async () => {
+      setLoading(true);
+      // Get Students
+      const studentsList = await db.getStudents(selectedClassId);
+      setStudents(studentsList);
+
+      // Get existing assessments
+      const existing = await db.getAssessments(selectedClassId, selectedSubject);
+      
+      // Map to state
+      const map: Record<string, Partial<Assessment>> = {};
+      studentsList.forEach(s => {
+        const found = existing.find(a => a.studentId === s.id && a.term === CURRENT_TERM);
+        map[s.id] = found || {
+            studentId: s.id,
+            classId: selectedClassId,
+            term: CURRENT_TERM,
+            academicYear: ACADEMIC_YEAR,
+            subject: selectedSubject,
+            testScore: 0,
+            homeworkScore: 0,
+            projectScore: 0,
+            examScore: 0,
+        };
+      });
+      setAssessments(map);
+      setLoading(false);
+    };
+
+    loadData();
+  }, [selectedClassId, selectedSubject]);
+
+  const handleChange = (studentId: string, field: keyof typeof LIMITS, value: string) => {
+    let numValue = value === '' ? 0 : parseFloat(value);
+    
+    // Constraint: Prevent entering values higher than max
+    const maxLimit = LIMITS[field];
+    if (numValue > maxLimit) {
+        numValue = maxLimit;
+    }
+    if (numValue < 0) numValue = 0;
+    
+    setAssessments(prev => {
+        const current = prev[studentId] || {};
+        return {
+            ...prev,
+            [studentId]: { ...current, [field]: numValue }
+        };
+    });
+  };
+
+  const calculateTotalScore = (a: Partial<Assessment>) => {
+      // CA (50 Marks) + Exam (100 Marks scaled to 50%) = 100%
+      const ca = (a.testScore || 0) + (a.homeworkScore || 0) + (a.projectScore || 0);
+      const examScaled = (a.examScore || 0) * 0.5; 
+      return Math.round(ca + examScaled);
+  };
+
+  const handleSave = async () => {
+      if (!selectedClassId) return;
+      setSaving(true);
+      try {
+          const promises = Object.values(assessments).map(async (a) => {
+             if (!a.studentId) return;
+             
+             const total = calculateTotalScore(a);
+
+             const completeRecord = {
+                 ...a,
+                 id: a.id || Math.random().toString(36),
+                 total,
+                 // Ensuring required fields exist for TS
+                 studentId: a.studentId!,
+                 classId: selectedClassId!,
+                 subject: selectedSubject,
+                 term: CURRENT_TERM as 1|2|3,
+                 academicYear: ACADEMIC_YEAR,
+                 testScore: a.testScore || 0,
+                 homeworkScore: a.homeworkScore || 0,
+                 projectScore: a.projectScore || 0,
+                 examScore: a.examScore || 0
+             } as Assessment;
+
+             return db.saveAssessment(completeRecord);
+          });
+          await Promise.all(promises);
+          
+          // Notification logic
+          const className = CLASSES_LIST.find(c => c.id === selectedClassId)?.name || selectedClassId;
+          await db.addSystemNotification(
+            `${user?.name} updated assessments for ${className} in ${selectedSubject}.`,
+            'assessment'
+          );
+
+          alert('Saved Successfully');
+      } catch (e) {
+          console.error(e);
+          alert('Error saving data');
+      } finally {
+          setSaving(false);
+      }
+  };
+
+  if (assignedClassIds.length === 0) return <Layout title="Assessment"><div className="p-8 text-center text-slate-500">No class assigned.</div></Layout>;
+
+  return (
+    <Layout title="Assessment Sheet">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        
+        {/* Controls */}
+        <div className="p-6 border-b border-slate-100 bg-slate-50 flex flex-col gap-4">
+            
+            <div className="flex flex-col md:flex-row gap-4 justify-between">
+                 {/* Class Selector */}
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Class</label>
+                    <select 
+                        value={selectedClassId}
+                        onChange={(e) => setSelectedClassId(e.target.value)}
+                        className="p-2 border border-slate-300 rounded-md shadow-sm w-full md:w-64 bg-white text-black"
+                    >
+                        {assignedClassIds.map(id => {
+                            const c = CLASSES_LIST.find(cl => cl.id === id);
+                            return <option key={id} value={id}>{c?.name}</option>
+                        })}
+                    </select>
+                </div>
+
+                {/* Subject Selector */}
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Subject</label>
+                    <select 
+                        value={selectedSubject}
+                        onChange={(e) => setSelectedSubject(e.target.value)}
+                        className="p-2 border border-slate-300 rounded-md shadow-sm w-full md:w-64"
+                        disabled={subjects.length === 0}
+                    >
+                        {subjects.length === 0 && <option>Loading subjects...</option>}
+                        {subjects.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-200 pt-4">
+                 <div className="hidden sm:block">
+                    <p className="text-sm font-medium text-slate-900">Term {CURRENT_TERM} &bull; {ACADEMIC_YEAR}</p>
+                 </div>
+                 <button 
+                    onClick={handleSave}
+                    disabled={saving || !selectedSubject || !selectedClassId}
+                    className="flex items-center bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+                 >
+                    <Save size={18} className="mr-2" />
+                    {saving ? 'Saving...' : 'Save Scores'}
+                 </button>
+            </div>
+        </div>
+
+        {/* Spreadsheet */}
+        <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+                <thead className="bg-slate-100 text-slate-600 font-semibold uppercase text-xs tracking-wider">
+                    <tr>
+                        <th className="px-4 py-3 sticky left-0 bg-slate-100 z-10 w-48">Student Name</th>
+                        <th className="px-2 py-3 w-24 text-center">Class Test<br/><span className="text-[10px] normal-case font-bold text-emerald-600">(15)</span></th>
+                        <th className="px-2 py-3 w-24 text-center">Homework<br/><span className="text-[10px] normal-case font-bold text-emerald-600">(15)</span></th>
+                        <th className="px-2 py-3 w-24 text-center">Project<br/><span className="text-[10px] normal-case font-bold text-emerald-600">(20)</span></th>
+                        <th className="px-2 py-3 w-28 text-center border-l border-slate-200 bg-blue-50/50">Exam<br/><span className="text-[10px] normal-case font-bold text-blue-600">(100)</span></th>
+                        <th className="px-4 py-3 w-24 text-center bg-slate-200">Total<br/><span className="text-[10px] normal-case">(100%)</span></th>
+                        <th className="px-4 py-3 w-20 text-center bg-slate-200">Grade</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {students.map((student) => {
+                        const data = assessments[student.id] || {};
+                        const total = calculateTotalScore(data);
+                        const { grade, remark } = calculateGrade(total);
+                        const gradeColor = getGradeColor(grade);
+
+                        return (
+                            <tr key={student.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 font-medium text-slate-800 sticky left-0 bg-white border-r border-slate-100">{student.name}</td>
+                                <td className="px-2 py-2">
+                                    <input 
+                                        type="number" 
+                                        min="0" 
+                                        max={LIMITS.testScore}
+                                        className="w-full text-center border border-slate-200 rounded p-1 focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={data.testScore || 0}
+                                        onChange={(e) => handleChange(student.id, 'testScore', e.target.value)}
+                                        onFocus={(e) => e.target.select()}
+                                    />
+                                </td>
+                                <td className="px-2 py-2">
+                                    <input 
+                                        type="number" 
+                                        min="0" 
+                                        max={LIMITS.homeworkScore}
+                                        className="w-full text-center border border-slate-200 rounded p-1 focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={data.homeworkScore || 0}
+                                        onChange={(e) => handleChange(student.id, 'homeworkScore', e.target.value)}
+                                        onFocus={(e) => e.target.select()}
+                                    />
+                                </td>
+                                <td className="px-2 py-2">
+                                    <input 
+                                        type="number" 
+                                        min="0" 
+                                        max={LIMITS.projectScore}
+                                        className="w-full text-center border border-slate-200 rounded p-1 focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={data.projectScore || 0}
+                                        onChange={(e) => handleChange(student.id, 'projectScore', e.target.value)}
+                                        onFocus={(e) => e.target.select()}
+                                    />
+                                </td>
+                                <td className="px-2 py-2 border-l border-slate-200 bg-blue-50/20">
+                                    <input 
+                                        type="number" 
+                                        min="0" 
+                                        max={LIMITS.examScore}
+                                        className="w-full text-center border border-blue-500 rounded p-1 focus:ring-2 focus:ring-blue-300 outline-none font-bold text-white bg-blue-600 shadow-sm"
+                                        value={data.examScore || 0}
+                                        onChange={(e) => handleChange(student.id, 'examScore', e.target.value)}
+                                        onFocus={(e) => e.target.select()}
+                                    />
+                                </td>
+                                <td className="px-4 py-3 text-center font-bold text-slate-800 bg-slate-50">
+                                    {total}
+                                </td>
+                                <td className="px-4 py-3 text-center bg-slate-50">
+                                    <span className={`inline-block w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${gradeColor}`}>
+                                        {grade}
+                                    </span>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    {students.length === 0 && (
+                        <tr><td colSpan={7} className="p-8 text-center text-slate-400">
+                            {selectedClassId ? 'No students found in this class.' : 'Select a class above.'}
+                        </td></tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+      </div>
+    </Layout>
+  );
+};
+
+export default AssessmentPage;

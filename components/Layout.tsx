@@ -1,0 +1,265 @@
+import React, { useState, useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { db } from '../services/mockDb';
+import { UserRole, SystemNotification } from '../types';
+import { 
+  LogOut, 
+  Menu, 
+  X, 
+  LayoutDashboard, 
+  Users, 
+  GraduationCap, 
+  ClipboardCheck, 
+  BookOpen,
+  Settings,
+  Bell,
+  CalendarDays,
+  BarChart,
+  Check
+} from 'lucide-react';
+
+interface LayoutProps {
+  children: React.ReactNode;
+  title: string;
+}
+
+const Layout: React.FC<LayoutProps> = ({ children, title }) => {
+  const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+  const [schoolName, setSchoolName] = useState('Noble Care');
+
+  // Notification State
+  const [notifications, setNotifications] = useState<SystemNotification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const isAdmin = user?.role === UserRole.ADMIN;
+
+  useEffect(() => {
+    const loadConfig = async () => {
+        try {
+            const config = await db.getSchoolConfig();
+            if (config && config.schoolName) {
+                setSchoolName(config.schoolName);
+            }
+        } catch (e) {
+            console.error("Failed to load school config", e);
+        }
+    };
+    loadConfig();
+  }, []);
+
+  // Fetch Notifications for Admin
+  useEffect(() => {
+    if (isAdmin) {
+        const fetchNotifications = async () => {
+            try {
+                const notes = await db.getSystemNotifications();
+                setNotifications(notes);
+                setUnreadCount(notes.filter(n => !n.isRead).length);
+            } catch (e) {
+                console.error("Failed to fetch notifications", e);
+            }
+        };
+        fetchNotifications();
+        
+        // Poll every 30 seconds for simplicity in this MVP
+        const interval = setInterval(fetchNotifications, 30000);
+        return () => clearInterval(interval);
+    }
+  }, [isAdmin]);
+
+  const handleMarkRead = async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      await db.markNotificationAsRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const NavItem = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => {
+    const isActive = location.pathname === href;
+    return (
+      <Link
+        to={href}
+        className={`flex items-center px-4 py-3 transition-colors ${
+          isActive 
+            ? 'bg-red-950 text-amber-400 border-r-4 border-amber-500' 
+            : 'text-red-100 hover:bg-red-800 hover:text-white'
+        }`}
+        onClick={() => setSidebarOpen(false)}
+      >
+        <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-amber-400' : 'text-red-300'}`} />
+        <span className="font-medium">{label}</span>
+      </Link>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-[#fafafa] flex">
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-30 w-64 bg-red-900 text-white transform transition-transform duration-200 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 flex flex-col shadow-xl border-r border-red-800
+      `}>
+        <div className="p-6 border-b border-red-800 bg-red-900 flex flex-col items-center justify-center relative">
+          <button onClick={() => setSidebarOpen(false)} className="md:hidden absolute top-4 right-4 text-red-200 hover:text-white">
+            <X size={24} />
+          </button>
+          
+          <div className="w-20 h-20 mb-3 bg-white rounded-full p-1 shadow-lg border-2 border-amber-500">
+            <img 
+               src="https://scontent.facc5-1.fna.fbcdn.net/v/t39.30808-6/277561581_380661664069143_4955839060397865014_n.jpg?_nc_cat=102&ccb=1-7&_nc_sid=6ee11a&_nc_eui2=AeFJNGCSI96CBW1S8R2sOotMrM2NNo5aPtOszY02jlo-04y0fL8D99GjvJaBXuzqH8OYrZRdn_DgSU4Kgwvj36D2&_nc_ohc=GeYOZj7SI8AQ7kNvwFo1QMy&_nc_oc=AdnCfyquuglPpsQYtG1zbC9KAOmrLOH7MKUJTuoVKPm7FdxXjqnrHmzUSj4b3hioGUo&_nc_zt=23&_nc_ht=scontent.facc5-1.fna&_nc_gid=DdsLMQJFSMTnkkiquIQTNQ&oh=00_Afo5zCyNS0kVyQ6p_ArT53WNpaTgIKDpPQScqRwUn3HyKA&oe=695CE41D" 
+               alt="Noble Care Academy" 
+               className="w-full h-full object-contain rounded-full"
+               onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full rounded-full bg-red-800 flex items-center justify-center text-amber-400 font-bold text-xs">NCA</div>';
+               }}
+            />
+          </div>
+
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-amber-400 leading-tight tracking-wide font-serif break-words px-2">
+                {schoolName}
+            </h1>
+            <p className="text-xs text-red-200 mt-1 uppercase tracking-wider">Management System</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 py-6 space-y-1">
+          {isAdmin ? (
+            <>
+              <NavItem href="/" icon={LayoutDashboard} label="Dashboard" />
+              <NavItem href="/admin/students" icon={GraduationCap} label="Students" />
+              <NavItem href="/admin/teachers" icon={Users} label="Teachers" />
+              <NavItem href="/admin/attendance" icon={BarChart} label="Attendance" />
+              <NavItem href="/admin/reports" icon={BookOpen} label="Reports" />
+              <NavItem href="/admin/timetable" icon={CalendarDays} label="Timetable" />
+              <NavItem href="/admin/settings" icon={Settings} label="Settings" />
+            </>
+          ) : (
+            <>
+              <NavItem href="/" icon={LayoutDashboard} label="Dashboard" />
+              <NavItem href="/teacher/attendance" icon={ClipboardCheck} label="Attendance" />
+              <NavItem href="/teacher/assessment" icon={BookOpen} label="Assessment" />
+            </>
+          )}
+        </nav>
+
+        <div className="p-4 border-t border-red-800 bg-red-900">
+          <div className="flex items-center mb-4">
+            <div className="w-10 h-10 rounded-full bg-amber-500 border-2 border-amber-300 flex items-center justify-center text-sm font-bold shadow-lg text-red-900">
+              {user?.name.charAt(0)}
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-white">{user?.name}</p>
+              <p className="text-xs text-amber-400 capitalize">{user?.role.toLowerCase()}</p>
+            </div>
+          </div>
+          <button 
+            onClick={logout}
+            className="w-full flex items-center justify-center px-4 py-2 text-sm text-red-200 hover:text-white hover:bg-red-800 rounded-md transition-colors"
+          >
+            <LogOut size={16} className="mr-2" />
+            Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+        <header className="bg-white shadow-sm h-16 flex items-center justify-between px-4 md:px-8 z-10 border-b border-amber-100">
+          <div className="flex items-center">
+            <button 
+              onClick={() => setSidebarOpen(true)}
+              className="md:hidden p-2 -ml-2 text-red-900 hover:text-red-700"
+            >
+              <Menu size={24} />
+            </button>
+            <h2 className="text-xl font-bold text-red-900 ml-2 md:ml-0">{title}</h2>
+          </div>
+          <div className="flex items-center gap-4">
+             {/* Notification Bell - ONLY FOR ADMIN */}
+             {isAdmin && (
+               <div className="relative">
+                 <button 
+                    onClick={() => setShowNotifications(!showNotifications)}
+                    className={`relative p-2 transition-colors ${showNotifications ? 'text-red-700 bg-red-50 rounded-full' : 'text-slate-400 hover:text-red-700'}`}
+                 >
+                    <Bell size={20} />
+                    {unreadCount > 0 && (
+                        <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border-2 border-white"></span>
+                    )}
+                 </button>
+
+                 {/* Dropdown */}
+                 {showNotifications && (
+                    <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)}></div>
+                        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white bg-opacity-100 rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+                            <div className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                <h4 className="font-bold text-slate-800 text-sm">Notifications</h4>
+                                <span className="text-xs text-slate-500">{unreadCount} unread</span>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto bg-white">
+                                {notifications.length === 0 ? (
+                                    <div className="p-8 text-center text-slate-400 text-sm">No new activity.</div>
+                                ) : (
+                                    notifications.map(n => (
+                                        <div key={n.id} className={`p-3 border-b border-slate-100 hover:bg-slate-50 transition-colors ${n.isRead ? 'bg-slate-50' : 'bg-white border-l-4 border-l-red-500'}`}>
+                                            <div className="flex justify-between items-start gap-2">
+                                                <div className="flex-1">
+                                                    <p className={`text-sm leading-snug mb-1 ${n.isRead ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>{n.message}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide ${n.isRead ? 'bg-slate-200 text-slate-500' : 'bg-red-100 text-red-600'}`}>
+                                                            {n.isRead ? 'Read' : 'Unread'}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400">
+                                                            {new Date(n.createdAt).toLocaleString()}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {!n.isRead && (
+                                                    <button onClick={(e) => handleMarkRead(n.id, e)} className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded transition-colors shrink-0" title="Mark as read">
+                                                        <Check size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </>
+                 )}
+               </div>
+             )}
+             
+             <div className="h-6 w-px bg-slate-200 mx-2 hidden sm:block"></div>
+
+             <div className="text-sm text-slate-500 hidden sm:block font-medium">
+               {new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+             </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-8">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default Layout;
