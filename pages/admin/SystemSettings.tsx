@@ -13,6 +13,7 @@ const SystemSettings = () => {
   const [newNotice, setNewNotice] = useState('');
   const [noticeDate, setNoticeDate] = useState(new Date().toISOString().split('T')[0]); // Default to today
   const [noticeType, setNoticeType] = useState<'info'|'urgent'>('info');
+  const [isAddingNotice, setIsAddingNotice] = useState(false);
 
   // Subjects State
   const [subjects, setSubjects] = useState<string[]>([]);
@@ -32,6 +33,8 @@ const SystemSettings = () => {
   const [showDangerZone, setShowDangerZone] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showDeleteSubjectModal, setShowDeleteSubjectModal] = useState(false);
+  const [subjectToDelete, setSubjectToDelete] = useState<string | null>(null);
 
   const fetchNotices = async () => {
     const data = await db.getNotices();
@@ -67,21 +70,30 @@ const SystemSettings = () => {
     e.preventDefault();
     if(!newNotice.trim() || !noticeDate) return;
 
-    // Create date object from YYYY-MM-DD string safely
-    const [year, month, day] = noticeDate.split('-').map(Number);
-    const dateObj = new Date(year, month - 1, day); 
-    const formattedDate = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    setIsAddingNotice(true);
+    try {
+      // Create date object from YYYY-MM-DD string safely
+      const [year, month, day] = noticeDate.split('-').map(Number);
+      const dateObj = new Date(year, month - 1, day);
+      const formattedDate = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
-    await db.addNotice({
-        id: Math.random().toString(36).substr(2, 9),
-        message: newNotice,
-        date: formattedDate,
-        type: noticeType
-    });
-    setNewNotice('');
-    // Keep the date as is or reset to today - typically easier to keep it if adding multiple for same day, 
-    // but resetting prevents accidental wrong dates. Let's keep it.
-    fetchNotices();
+      await db.addNotice({
+          id: Math.random().toString(36).substr(2, 9),
+          message: newNotice,
+          date: formattedDate,
+          type: noticeType
+      });
+      setNewNotice('');
+      // Keep the date as is or reset to today - typically easier to keep it if adding multiple for same day,
+      // but resetting prevents accidental wrong dates. Let's keep it.
+      fetchNotices();
+      showToast('Notice added successfully!', { type: 'success' });
+    } catch (error) {
+      console.error('Error adding notice:', error);
+      showToast('Failed to add notice. Please try again.', { type: 'error' });
+    } finally {
+      setIsAddingNotice(false);
+    }
   };
 
   const handleDeleteNotice = async (id: string) => {
@@ -98,10 +110,23 @@ const SystemSettings = () => {
       fetchSubjects();
   };
 
-  const handleDeleteSubject = async (name: string) => {
-      if(window.confirm(`Are you sure you want to delete "${name}"? This might hide scores associated with this subject.`)) {
-          await db.deleteSubject(name);
+  const handleDeleteSubject = (name: string) => {
+      setSubjectToDelete(name);
+      setShowDeleteSubjectModal(true);
+  };
+
+  const confirmDeleteSubject = async () => {
+      if (!subjectToDelete) return;
+      setShowDeleteSubjectModal(false);
+      try {
+          await db.deleteSubject(subjectToDelete);
           fetchSubjects();
+          showToast(`Subject "${subjectToDelete}" deleted successfully!`, { type: 'success' });
+      } catch (error) {
+          console.error('Error deleting subject:', error);
+          showToast('Failed to delete subject. Please try again.', { type: 'error' });
+      } finally {
+          setSubjectToDelete(null);
       }
   };
 
@@ -380,11 +405,21 @@ const SystemSettings = () => {
                             Urgent
                          </label>
                     </div>
-                    <button 
-                        type="submit" 
-                        className="bg-emerald-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-emerald-700 transition-colors flex items-center"
+                    <button
+                        type="submit"
+                        disabled={isAddingNotice}
+                        className="bg-emerald-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-emerald-700 transition-colors flex items-center disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                        <Plus size={16} className="mr-1"/> Add Notice
+                        {isAddingNotice ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-1"></div>
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Plus size={16} className="mr-1"/> Add Notice
+                          </>
+                        )}
                     </button>
                 </div>
             </form>
@@ -439,6 +474,38 @@ const SystemSettings = () => {
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 Confirm Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Subject Confirmation Modal */}
+      {showDeleteSubjectModal && subjectToDelete && (
+        <div className="fixed inset-0 bg-slate-900 bg-opacity-30 flex items-center justify-center z-50 transition-opacity duration-300">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4 transform transition-all duration-300 scale-100">
+            <div className="flex items-center mb-4">
+              <AlertTriangle className="text-red-600 mr-3" size={32} />
+              <h2 className="text-xl font-bold text-slate-800">Delete Subject</h2>
+            </div>
+            <p className="text-slate-600 mb-6">
+              Are you sure you want to delete the subject "<strong>{subjectToDelete}</strong>"? This might hide scores associated with this subject and cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteSubjectModal(false);
+                  setSubjectToDelete(null);
+                }}
+                className="px-4 py-2 text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteSubject}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Delete Subject
               </button>
             </div>
           </div>

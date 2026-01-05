@@ -8,8 +8,9 @@ import { Plus, Trash2, UserPlus, Mail, AlertTriangle, CheckSquare, Square, Lock,
 
 // Firebase imports for creating users
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { firebaseConfig } from '../../services/firebase';
+import { firebaseConfig, firestore } from '../../services/firebase';
 import * as firebaseApp from 'firebase/app';
+import { deleteDoc, doc } from 'firebase/firestore';
 
 const ManageTeachers = () => {
   const [teachers, setTeachers] = useState<User[]>([]);
@@ -116,9 +117,17 @@ const ManageTeachers = () => {
     setTeachers(prev => prev.filter(t => t.id !== idToDelete));
 
     try {
+      // Delete the user document from Firestore
       await db.deleteUser(idToDelete);
+
+      // Also delete all teacher attendance records for this teacher
+      const teacherAttendanceRecords = await db.getAllTeacherAttendanceRecords();
+      const recordsToDelete = teacherAttendanceRecords.filter(r => r.teacherId === idToDelete);
+      const deletePromises = recordsToDelete.map(r => deleteDoc(doc(firestore, 'teacher_attendance', r.id)));
+      await Promise.all(deletePromises);
+
       // Note: We cannot delete the Auth account from the Client SDK (requires Admin SDK).
-      // The user will lose access to data (Firestore rules) but the login might still "work" technically 
+      // The user will lose access to data (Firestore rules) but the login might still "work" technically
       // until you disable them in the Firebase Console.
     } catch (error) {
       console.error("Failed to delete teacher", error);

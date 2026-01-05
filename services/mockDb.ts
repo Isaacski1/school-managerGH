@@ -2,7 +2,7 @@ import { firestore } from './firebase';
 import { 
   collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, query, where, orderBy, limit 
 } from 'firebase/firestore';
-import { User, UserRole, Student, AttendanceRecord, TeacherAttendanceRecord, Assessment, Notice, ClassTimetable, SystemNotification, MonthlyTeacherAttendance, TeacherAttendanceAnalytics } from "../types";
+import { User, UserRole, Student, AttendanceRecord, TeacherAttendanceRecord, Assessment, Notice, ClassTimetable, SystemNotification, MonthlyTeacherAttendance, TeacherAttendanceAnalytics, StudentRemark, StudentSkills } from "../types";
 import { DEFAULT_SUBJECTS, CURRENT_TERM, ACADEMIC_YEAR, CLASSES_LIST } from "../constants";
 
 class FirestoreService {
@@ -20,7 +20,9 @@ class FirestoreService {
       return {
           schoolName: 'Noble Care Academy',
           academicYear: ACADEMIC_YEAR,
-          currentTerm: `Term ${CURRENT_TERM}`
+          currentTerm: `Term ${CURRENT_TERM}`,
+          headTeacherRemark: 'An outstanding performance. The school is proud of you.',
+          termEndDate: '2024-12-20'
       };
   }
 
@@ -243,7 +245,7 @@ class FirestoreService {
     const snap = await getDocs(q);
     const allAssessments = snap.docs
         .map(d => d.data() as Assessment)
-        .filter(a => a.term === CURRENT_TERM);
+        .filter(a => true); // Show assessments from all terms
     
     const subjects = await this.getSubjects();
 
@@ -323,14 +325,39 @@ class FirestoreService {
   async getAllTeacherAttendanceRecords(): Promise<TeacherAttendanceRecord[]> {
       return this.getCollection<TeacherAttendanceRecord>('teacher_attendance');
   }
+
+    // --- Student Remarks ---
+    async getStudentRemarks(classId: string): Promise<StudentRemark[]> {
+        const q = query(collection(firestore, 'student_remarks'), where('classId', '==', classId));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => d.data() as StudentRemark);
+    }
+
+    async saveStudentRemark(remark: StudentRemark): Promise<void> {
+        await setDoc(doc(firestore, 'student_remarks', remark.id), remark);
+    }
+    
+    // --- Student Skills ---
+    async getStudentSkills(classId: string): Promise<StudentSkills[]> {
+        const q = query(collection(firestore, 'student_skills'), where('classId', '==', classId));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => d.data() as StudentSkills);
+    }
+
+    async saveStudentSkills(skills: StudentSkills): Promise<void> {
+        await setDoc(doc(firestore, 'student_skills', skills.id), skills);
+    }
+
    // --- Teacher Attendance Analytics ---
    async getTeacherAttendanceAnalytics(termStartDate?: string, vacationDate?: string): Promise<TeacherAttendanceAnalytics[]> {
        const teachers = await this.getUsers();
        const teacherUsers = teachers.filter(t => t.role === UserRole.TEACHER);
        const allRecords = await this.getAllTeacherAttendanceRecords();
+        const config = await this.getSchoolConfig();
+
 
        // Use term start date or default to current academic year start
-       const startDate = termStartDate || `${ACADEMIC_YEAR.split('-')[0]}-09-01`; // September 1st
+       const startDate = termStartDate || config.schoolReopenDate || `${ACADEMIC_YEAR.split('-')[0]}-09-01`; // September 1st
        const endDate = vacationDate || new Date().toISOString().split('T')[0]; // Today or vacation date
 
        const analytics: TeacherAttendanceAnalytics[] = [];

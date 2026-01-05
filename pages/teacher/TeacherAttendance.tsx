@@ -12,8 +12,29 @@ const TeacherAttendance = () => {
   const [schoolConfig, setSchoolConfig] = useState<any>(null);
   const [missedAttendanceAlert, setMissedAttendanceAlert] = useState<string | null>(null);
 
-  // Get today's date and yesterday's date
+  // Get today's date
   const today = new Date().toISOString().split('T')[0];
+
+  // Get current week's Monday to Friday dates
+  const getCurrentWeekDates = () => {
+    const now = new Date();
+    const currentDay = now.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // Adjust to get Monday
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + mondayOffset);
+
+    const weekDates: string[] = [];
+    for (let i = 0; i < 5; i++) { // Monday to Friday
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + i);
+      weekDates.push(date.toISOString().split('T')[0]);
+    }
+    return weekDates;
+  };
+
+  const weekDates = getCurrentWeekDates();
+
+  // Get yesterday for backwards compatibility
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   // Get school re-opening date and check if school is open
@@ -69,8 +90,8 @@ const TeacherAttendance = () => {
       try {
         const records: Record<string, TeacherAttendanceRecord> = {};
 
-        // Fetch records for yesterday and today
-        const datesToCheck = [yesterday, today];
+        // Fetch records for the current week (Monday to Friday)
+        const datesToCheck = weekDates;
         for (const date of datesToCheck) {
           const record = await db.getTeacherAttendance(user.id, date);
           if (record) {
@@ -200,120 +221,95 @@ const TeacherAttendance = () => {
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {/* Today's Attendance */}
-            <div className="p-6 bg-blue-50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-100 text-blue-600">
-                    <Calendar size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-slate-800">
-                      {formatDate(today)}
-                      <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-1 rounded-full">Today</span>
-                    </h3>
-                    {attendanceRecords[today] ? (
-                      <p className="text-sm text-slate-500">
-                        Marked as <span className={`font-medium ${
-                          attendanceRecords[today].status === 'present' ? 'text-emerald-600' : 'text-red-600'
-                        }`}>
-                          {attendanceRecords[today].status.toUpperCase()}
-                        </span>
-                      </p>
-                    ) : (
-                      <p className="text-sm text-slate-400">Not marked yet</p>
-                    )}
-                  </div>
-                </div>
+            {weekDates.map((date, index) => {
+              const isToday = date === today;
+              const isPast = date < today;
+              const isFuture = date > today;
+              const record = attendanceRecords[date];
+              const canMark = isValidAttendanceDate(date, schoolConfig?.schoolReopenDate) && !isFuture;
 
-                <div className="flex gap-3">
-                  {isSchoolOpen() && !attendanceRecords[today] && (
-                    <>
-                      <button
-                        onClick={() => handleMarkAttendance(today, 'present')}
-                        disabled={saving[today]}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                      >
-                        {saving[today] ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              return (
+                <div key={date} className={`p-6 ${isToday ? 'bg-blue-50' : isPast ? 'bg-white' : 'bg-slate-50'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                        isToday ? 'bg-blue-100 text-blue-600' :
+                        isPast ? 'bg-slate-100 text-slate-600' :
+                        'bg-slate-100 text-slate-400'
+                      }`}>
+                        <Calendar size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-slate-800">
+                          {formatDate(date)}
+                          {isToday && <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-1 rounded-full">Today</span>}
+                          {isPast && <span className="ml-2 text-xs bg-slate-600 text-white px-2 py-1 rounded-full">Past</span>}
+                          {isFuture && <span className="ml-2 text-xs bg-slate-400 text-white px-2 py-1 rounded-full">Future</span>}
+                        </h3>
+                        {record ? (
+                          <p className="text-sm text-slate-500">
+                            Marked as <span className={`font-medium ${
+                              record.status === 'present' ? 'text-emerald-600' : 'text-red-600'
+                            }`}>
+                              {record.status.toUpperCase()}
+                            </span>
+                          </p>
                         ) : (
-                          <CheckCircle size={16} />
+                          <p className="text-sm text-slate-400">
+                            {isFuture ? 'Not yet available' : 'Not marked yet'}
+                          </p>
                         )}
-                        Present
-                      </button>
-
-                      <button
-                        onClick={() => handleMarkAttendance(today, 'absent')}
-                        disabled={saving[today]}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                      >
-                        {saving[today] ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        ) : (
-                          <XCircle size={16} />
-                        )}
-                        Absent
-                      </button>
-                    </>
-                  )}
-
-                  {attendanceRecords[today] && (
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <CheckCircle size={16} className={attendanceRecords[today].status === 'present' ? 'text-emerald-500' : 'text-red-500'} />
-                      Marked
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
 
-            {/* Yesterday's Attendance (if missed) */}
-            {missedAttendanceAlert && (
-              <div className="p-6 bg-amber-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center bg-amber-100 text-amber-600">
-                      <AlertTriangle size={20} />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-slate-800">
-                        {formatDate(yesterday)}
-                        <span className="ml-2 text-xs bg-amber-600 text-white px-2 py-1 rounded-full">Yesterday</span>
-                      </h3>
-                      <p className="text-sm text-amber-700 font-medium">Missed - Please mark now</p>
+                    <div className="flex gap-3">
+                      {canMark && !record && (
+                        <>
+                          <button
+                            onClick={() => handleMarkAttendance(date, 'present')}
+                            disabled={saving[date]}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            {saving[date] ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            ) : (
+                              <CheckCircle size={16} />
+                            )}
+                            Present
+                          </button>
+
+                          <button
+                            onClick={() => handleMarkAttendance(date, 'absent')}
+                            disabled={saving[date]}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                          >
+                            {saving[date] ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            ) : (
+                              <XCircle size={16} />
+                            )}
+                            Absent
+                          </button>
+                        </>
+                      )}
+
+                      {record && (
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                          <CheckCircle size={16} className={record.status === 'present' ? 'text-emerald-500' : 'text-red-500'} />
+                          Marked
+                        </div>
+                      )}
+
+                      {!canMark && !record && (
+                        <div className="text-sm text-slate-400">
+                          {isFuture ? 'Future date' : 'Before school opened'}
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => handleMarkAttendance(yesterday, 'present')}
-                      disabled={saving[yesterday]}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      {saving[yesterday] ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      ) : (
-                        <CheckCircle size={16} />
-                      )}
-                      Present
-                    </button>
-
-                    <button
-                      onClick={() => handleMarkAttendance(yesterday, 'absent')}
-                      disabled={saving[yesterday]}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                    >
-                      {saving[yesterday] ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      ) : (
-                        <XCircle size={16} />
-                      )}
-                      Absent
-                    </button>
-                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })}
           </div>
         )}
       </div>

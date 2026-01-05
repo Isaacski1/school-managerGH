@@ -2,16 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { useAuth } from '../../context/AuthContext';
-import { CLASSES_LIST } from '../../constants';
+import { CLASSES_LIST, CURRENT_TERM, ACADEMIC_YEAR } from '../../constants';
 import { db } from '../../services/mockDb';
-import { Notice, TimeSlot, ClassTimetable, TeacherAttendanceRecord } from '../../types';
+import { Notice, TimeSlot, ClassTimetable, TeacherAttendanceRecord, Student, StudentRemark, StudentSkills } from '../../types';
+import { showToast } from '../../services/toast';
 import TeacherAttendance from './TeacherAttendance';
-import { ClipboardCheck, BookOpen, Clock, TrendingUp, Bell, ChevronDown } from 'lucide-react';
+import { ClipboardCheck, BookOpen, Clock, TrendingUp, Bell, ChevronDown, X } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const SKILLS_LIST = ['punctuality', 'neatness', 'conduct', 'attitudeToWork', 'classParticipation', 'homeworkCompletion'];
 
 const TeacherDashboard = () => {
   const { user } = useAuth();
+
+  const [subjects, setSubjects] = useState<string[]>([]);
 
   // Loading state for when user is not available
   if (!user) {
@@ -48,6 +52,21 @@ const TeacherDashboard = () => {
   const [markingAttendance, setMarkingAttendance] = useState(false);
   const [showWeeklyAttendance, setShowWeeklyAttendance] = useState(false);
    const [missedAttendanceModal, setMissedAttendanceModal] = useState<{show: boolean, date: string}>({show: false, date: ''});
+
+   // Remarks Modal State
+   const [remarksModalOpen, setRemarksModalOpen] = useState(false);
+   const [studentsForRemarks, setStudentsForRemarks] = useState<Student[]>([]);
+   const [remarksData, setRemarksData] = useState<Record<string, { remark: string, behaviorTag: string }>>({});
+   const [savingRemarks, setSavingRemarks] = useState(false);
+
+   // Skills Modal State
+   const [skillsModalOpen, setSkillsModalOpen] = useState(false);
+   const [studentsForSkills, setStudentsForSkills] = useState<Student[]>([]);
+   const [skillsData, setSkillsData] = useState<Record<string, StudentSkills>>({});
+   const [savingSkills, setSavingSkills] = useState(false);
+
+   // Class students for remarks
+   const [classStudents, setClassStudents] = useState<Student[]>([]);
   
   // Helper to get current day
   const getCurrentDay = () => {
@@ -62,6 +81,14 @@ const TeacherDashboard = () => {
 
     // Attendance Trend State
     const [attendanceTrend, setAttendanceTrend] = useState<{ day: string, percentage: number }[]>([]);
+
+    // Class Overview State
+    const [totalStudents, setTotalStudents] = useState(0);
+    const [presentToday, setPresentToday] = useState(0);
+    const [absentToday, setAbsentToday] = useState(0);
+    const [classAverage, setClassAverage] = useState(0);
+    const [behaviorAverage, setBehaviorAverage] = useState('0.0');
+    const [subjectStandings, setSubjectStandings] = useState<{subject: string, topStudent: string, average: number}[]>([]);
 
     const getWeekDates = () => {
         const now = new Date();
@@ -89,19 +116,36 @@ const TeacherDashboard = () => {
       // Re-check for missed attendance when returning to dashboard
       const checkAttendance = async () => {
         const today = new Date().toISOString().split('T')[0];
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
         const todayAttendance = await db.getTeacherAttendance(user?.id || '', today);
 
         try {
           const config = await db.getSchoolConfig();
-          const schoolHasReopened = config.schoolReopenDate && yesterday >= config.schoolReopenDate;
+          const currentDate = new Date();
+          const schoolHasReopened = config.schoolReopenDate && currentDate >= new Date(config.schoolReopenDate);
+
           if (schoolHasReopened) {
-            const yesterdayAttendance = await db.getTeacherAttendance(user?.id || '', yesterday);
-            if (!yesterdayAttendance) {
-              setMissedAttendanceModal({show: true, date: yesterday});
-            } else {
-              setMissedAttendanceModal({show: false, date: ''});
+            // Find the most recent weekday before today
+            const todayDate = new Date();
+            const previousWeekday = new Date(todayDate);
+            let dayOfWeek = previousWeekday.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+            // Go back one day at a time until we hit a weekday (Mon-Fri)
+            do {
+              previousWeekday.setDate(previousWeekday.getDate() - 1);
+              dayOfWeek = previousWeekday.getDay();
+            } while (dayOfWeek === 0 || dayOfWeek === 6); // Skip Sunday (0) and Saturday (6)
+
+            const previousSchoolDay = previousWeekday.toISOString().split('T')[0];
+
+            // Only check if the previous school day is on or after the reopen date
+            if (previousSchoolDay >= config.schoolReopenDate) {
+              const attendance = await db.getTeacherAttendance(user?.id || '', previousSchoolDay);
+              if (!attendance) {
+                setMissedAttendanceModal({show: true, date: previousSchoolDay});
+              } else {
+                setMissedAttendanceModal({show: false, date: ''});
+              }
             }
           }
         } catch (error) {
@@ -115,15 +159,18 @@ const TeacherDashboard = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-        // Fetch Config for Term Badge
+        // Fetch Config and Subjects
+        let config: any = null;
         try {
-            const config = await db.getSchoolConfig();
-            if (config && config.currentTerm) {
-                setCurrentTerm(config.currentTerm);
-            }
+            config = await db.getSchoolConfig();
+            setCurrentTerm(config.currentTerm || `Term ${CURRENT_TERM}`);
         } catch (e) {
             console.error(e);
+            config = { currentTerm: `Term ${CURRENT_TERM}`, academicYear: ACADEMIC_YEAR, schoolReopenDate: '' };
         }
+
+        const subjectsData = await db.getSubjects();
+        setSubjects(subjectsData);
 
         // Notices
         const noticeData = await db.getNotices();
@@ -134,15 +181,32 @@ const TeacherDashboard = () => {
         const attendance = await db.getTeacherAttendance(user?.id || '', today);
         setTeacherAttendance(attendance);
 
-        // Check for missed attendance (yesterday)
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        // Check for missed attendance on the previous school day (weekday)
         try {
           const config = await db.getSchoolConfig();
-          const schoolHasReopened = config.schoolReopenDate && yesterday >= config.schoolReopenDate;
+          const currentDate = new Date();
+          const schoolHasReopened = config.schoolReopenDate && currentDate >= new Date(config.schoolReopenDate);
+
           if (schoolHasReopened) {
-            const yesterdayAttendance = await db.getTeacherAttendance(user?.id || '', yesterday);
-            if (!yesterdayAttendance) {
-              setMissedAttendanceModal({show: true, date: yesterday});
+            // Find the most recent weekday before today
+            const today = new Date();
+            const previousWeekday = new Date(today);
+            let dayOfWeek = previousWeekday.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+            // Go back one day at a time until we hit a weekday (Mon-Fri)
+            do {
+              previousWeekday.setDate(previousWeekday.getDate() - 1);
+              dayOfWeek = previousWeekday.getDay();
+            } while (dayOfWeek === 0 || dayOfWeek === 6); // Skip Sunday (0) and Saturday (6)
+
+            const previousSchoolDay = previousWeekday.toISOString().split('T')[0];
+
+            // Only check if the previous school day is on or after the reopen date
+            if (previousSchoolDay >= config.schoolReopenDate) {
+              const attendance = await db.getTeacherAttendance(user?.id || '', previousSchoolDay);
+              if (!attendance) {
+                setMissedAttendanceModal({show: true, date: previousSchoolDay});
+              }
             }
           }
         } catch (error) {
@@ -185,6 +249,70 @@ const TeacherDashboard = () => {
                 });
 
                 setAttendanceTrend(trendData);
+                setClassStudents(students);
+
+                // Class Overview Calculations
+                setTotalStudents(students.length);
+                const today = new Date().toISOString().split('T')[0];
+                const todayAttendance = attendanceRecords.find(r => r.date === today);
+                const presentTodayCount = todayAttendance ? todayAttendance.presentStudentIds.length : 0;
+                setPresentToday(presentTodayCount);
+                setAbsentToday(students.length - presentTodayCount);
+
+                // Class Average
+                const currentTermNum = parseInt((config.currentTerm || `Term ${CURRENT_TERM}`).split(' ')[1]);
+                let totalScore = 0;
+                let totalAssessments = 0;
+                for (const subject of subjectsData) {
+                    const assessments = await db.getAssessments(selectedClassId, subject);
+                    const termAssessments = assessments.filter(a => a.term === currentTermNum);
+                    for (const assessment of termAssessments) {
+                        const score = assessment.total || ((assessment.testScore||0) + (assessment.homeworkScore||0) + (assessment.projectScore||0) + (assessment.examScore||0));
+                        totalScore += score;
+                        totalAssessments++;
+                    }
+                }
+                const avg = totalAssessments > 0 ? (totalScore / totalAssessments) : 0;
+                setClassAverage(avg);
+
+                // Behavior Tracker
+                const skills = await db.getStudentSkills(selectedClassId);
+                const termSkills = skills.filter(s => s.term === currentTermNum);
+                let totalConductScore = 0;
+                let conductCount = 0;
+                const conductMap: {[key: string]: number} = {'Excellent': 5, 'Very Good': 4, 'Good': 3, 'Fair': 2, 'Poor': 1};
+                for (const skill of termSkills) {
+                    if (skill.conduct) {
+                        totalConductScore += conductMap[skill.conduct] || 0;
+                        conductCount++;
+                    }
+                }
+                const avgConduct = conductCount > 0 ? totalConductScore / conductCount : 0;
+                setBehaviorAverage(avgConduct.toFixed(1));
+
+                // Subject Standings
+                const standings: {subject: string, topStudent: string, average: number}[] = [];
+                for (const subject of subjectsData) {
+                    const assessments = await db.getAssessments(selectedClassId, subject);
+                    const termAssessments = assessments.filter(a => a.term === currentTermNum);
+                    if (termAssessments.length === 0) continue;
+                    let totalScore = 0;
+                    let maxScore = 0;
+                    let topStudent = '';
+                    for (const assessment of termAssessments) {
+                        const score = assessment.total || ((assessment.testScore||0) + (assessment.homeworkScore||0) + (assessment.projectScore||0) + (assessment.examScore||0));
+                        const student = students.find(s => s.id === assessment.studentId);
+                        if (student && score > maxScore) {
+                            maxScore = score;
+                            topStudent = student.name;
+                        }
+                        totalScore += score;
+                    }
+                    const avg = totalScore / termAssessments.length;
+                    standings.push({subject, topStudent, average: avg});
+                }
+                standings.sort((a,b) => b.average - a.average);
+                setSubjectStandings(standings);
 
             } catch (error) {
                 console.error("Error calculating attendance trend:", error);
@@ -334,6 +462,102 @@ const TeacherDashboard = () => {
                         )}
                     </div>
                 </button>
+
+                <button onClick={async () => { 
+                    const existingRemarks = await db.getStudentRemarks(selectedClassId);
+                    const remarksMap = existingRemarks.reduce((acc, remark) => {
+                        acc[remark.studentId] = { remark: remark.remark, behaviorTag: remark.behaviorTag };
+                        return acc;
+                    }, {} as Record<string, { remark: string, behaviorTag: string }>);
+                    setRemarksData(remarksMap);
+
+    const existingSkills = await db.getStudentSkills(selectedClassId);
+    const skillsMap = existingSkills.reduce((acc, skill) => {
+        acc[skill.studentId] = {
+            punctuality: skill.punctuality,
+            neatness: skill.neatness,
+            conduct: skill.conduct,
+            attitudeToWork: skill.attitudeToWork,
+            classParticipation: skill.classParticipation,
+            homeworkCompletion: skill.homeworkCompletion,
+        };
+        return acc;
+    }, {} as Record<string, any>);
+    setSkillsData(skillsMap);
+                    setStudentsForRemarks(classStudents); 
+                    setRemarksModalOpen(true); 
+                }} className="group block bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:border-purple-500 transition-all relative overflow-hidden w-full text-left">
+                    <div className="absolute right-0 top-0 w-24 h-24 bg-purple-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                    <div className="relative z-10">
+                        <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-500 transition-colors">
+                            <BookOpen className="w-6 h-6 text-purple-600 group-hover:text-white" />
+                        </div>
+                        <h3 className="font-bold text-lg text-slate-800 mb-1">Write Remarks</h3>
+                        <p className="text-sm text-slate-500">End of term comments & behavior tags.</p>
+                    </div>
+                </button>
+
+                <button onClick={async () => {
+                    const existingSkills = await db.getStudentSkills(selectedClassId);
+                    const skillsMap = existingSkills.reduce((acc, skill) => {
+                        acc[skill.studentId] = {
+                            punctuality: skill.punctuality,
+                            neatness: skill.neatness,
+                            conduct: skill.conduct,
+                            attitudeToWork: skill.attitudeToWork,
+                            classParticipation: skill.classParticipation,
+                            homeworkCompletion: skill.homeworkCompletion,
+                        };
+                        return acc;
+                    }, {} as Record<string, any>);
+                    setSkillsData(skillsMap);
+                    setStudentsForSkills(classStudents);
+                    setSkillsModalOpen(true);
+                }} className="group block bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:border-blue-500 transition-all relative overflow-hidden w-full text-left">
+                    <div className="absolute right-0 top-0 w-24 h-24 bg-blue-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                    <div className="relative z-10">
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-500 transition-colors">
+                            <TrendingUp className="w-6 h-6 text-blue-600 group-hover:text-white" />
+                        </div>
+                        <h3 className="font-bold text-lg text-slate-800 mb-1">Edit Skills</h3>
+                        <p className="text-sm text-slate-500">Rate student skills and behavior.</p>
+                    </div>
+                </button>
+            </div>
+
+            {/* Class Overview Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <h4 className="font-bold text-slate-800 mb-2">Class Health</h4>
+                    <div className="space-y-1 text-sm">
+                        <div className="flex justify-between"><span>Total Students:</span><span className="font-semibold">{totalStudents}</span></div>
+                        <div className="flex justify-between"><span>Present Today:</span><span className="font-semibold text-green-600">{presentToday}</span></div>
+                        <div className="flex justify-between"><span>Absent Today:</span><span className="font-semibold text-red-600">{absentToday}</span></div>
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <h4 className="font-bold text-slate-800 mb-2">Average Performance</h4>
+                    <div className="text-center">
+                        <span className="text-2xl font-bold text-blue-600">{classAverage.toFixed(1)}%</span>
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <h4 className="font-bold text-slate-800 mb-2">Behavior Average</h4>
+                    <div className="text-center">
+                        <span className="text-lg font-semibold text-purple-600">{behaviorAverage}/5</span>
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <h4 className="font-bold text-slate-800 mb-2">Subject Standings</h4>
+                    <div className="space-y-1 max-h-20 overflow-y-auto">
+                        {subjectStandings.slice(0,3).map(s => (
+                            <div key={s.subject} className="flex justify-between text-xs">
+                                <span>{s.subject}:</span>
+                                <span className="font-semibold">{s.topStudent || 'N/A'}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             </div>
 
             {/* Attendance Chart Visualization */}
@@ -472,7 +696,7 @@ const TeacherDashboard = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900">Attendance Reminder</h3>
-                  <p className="text-sm text-slate-500">You missed marking attendance yesterday</p>
+                  <p className="text-sm text-slate-500">You missed marking attendance for a previous school day</p>
                 </div>
               </div>
             </div>
@@ -501,6 +725,192 @@ const TeacherDashboard = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Remarks Modal */}
+      {remarksModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 rounded-full">
+                    <BookOpen className="text-purple-600" size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900">End of Term Remarks</h3>
+                    <p className="text-sm text-slate-500">Write comments and select behavior tags for each student</p>
+                  </div>
+                </div>
+                <button onClick={() => setRemarksModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {studentsForRemarks.map(student => (
+                  <div key={student.id} className="border rounded p-4">
+                    <h4 className="font-semibold mb-2">{student.name}</h4>
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium mb-1">Behavior Tag</label>
+                      <select value={remarksData[student.id]?.behaviorTag || ''} onChange={(e) => setRemarksData(prev => ({ ...prev, [student.id]: { ...prev[student.id], behaviorTag: e.target.value } })) } className="w-full p-2 border rounded">
+                        <option value="">Select Behavior</option>
+                        <option value="Excellent">Excellent</option>
+                        <option value="Good">Good</option>
+                        <option value="Needs Improvement">Needs Improvement</option>
+                      </select>
+                    </div>
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium mb-1">Remark</label>
+                      <textarea value={remarksData[student.id]?.remark || ''} onChange={(e) => setRemarksData(prev => ({ ...prev, [student.id]: { ...prev[student.id], remark: e.target.value } })) } placeholder="Write remark..." className="w-full p-2 border rounded" rows={3} />
+                    </div>
+                    <div className="mb-2">
+                      <label className="block text-sm font-medium mb-1">Suggestion Remarks</label>
+                      <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+                        {[
+                          "An excellent student who consistently shows outstanding performance and behavior.",
+                          "A dedicated learner who participates actively in class activities.",
+                          "Shows great potential and is making steady progress in all subjects.",
+                          "A hardworking student who always completes assignments on time.",
+                          "Demonstrates good leadership qualities and helps peers.",
+                          "Has improved significantly this term and should continue the good work.",
+                          "A well-behaved student who respects teachers and classmates.",
+                          "Shows creativity and enthusiasm in learning new concepts.",
+                          "Needs to focus more on studies and participate more in class.",
+                          "Has the ability to excel with consistent effort and better time management."
+                        ].map((suggestion, index) => (
+                          <div key={index} className="mb-1">
+                            <button onClick={() => setRemarksData(prev => ({ ...prev, [student.id]: { ...prev[student.id], remark: suggestion } })) } className="text-left text-sm text-blue-600 hover:text-blue-800 underline block w-full">{suggestion}</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button onClick={async () => {
+                  setSavingRemarks(true);
+                  try {
+                    const termNumber = parseInt(currentTerm.split(' ')[1]);
+                    const promises = Object.entries(remarksData).map(async ([studentId, data]) => {
+                      const d = data as { remark: string, behaviorTag: string };
+                      if (d.remark || d.behaviorTag) {
+                        const remark: StudentRemark = {
+                          id: `${studentId}_${currentTerm.replace(' ', '_')}`,
+                          studentId,
+                          classId: selectedClassId || '',
+                          term: termNumber as 1 | 2 | 3,
+                          academicYear: ACADEMIC_YEAR,
+                          remark: d.remark,
+                          behaviorTag: d.behaviorTag as 'Excellent' | 'Good' | 'Needs Improvement',
+                          teacherId: user?.id || '',
+                          dateCreated: new Date().toISOString().split('T')[0]
+                        };
+                        return db.saveStudentRemark(remark);
+                      }
+                    });
+                    await Promise.all(promises.filter(Boolean));
+                    showToast('Remarks saved successfully', { type: 'success' });
+                    setRemarksModalOpen(false);
+                  } catch (e) {
+                    console.error(e);
+                    showToast('Error saving remarks', { type: 'error' });
+                  } finally {
+                    setSavingRemarks(false);
+                  }
+                }} disabled={savingRemarks} className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 flex items-center">
+                  {savingRemarks && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>}
+                  {savingRemarks ? 'Saving...' : 'Save All Remarks'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Skills Modal */}
+      {skillsModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+                <div className="p-6 border-b border-slate-100">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 rounded-full">
+                                <TrendingUp className="text-blue-600" size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-900">Edit Student Skills</h3>
+                                <p className="text-sm text-slate-500">Rate each student on the following skills</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setSkillsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+                <div className="p-6">
+                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                        {studentsForSkills.map(student => (
+                            <div key={student.id} className="border rounded p-4">
+                                <h4 className="font-semibold mb-2">{student.name}</h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {SKILLS_LIST.map(skill => (
+                                        <div key={skill} className="mb-2">
+                                            <label className="block text-sm font-medium mb-1 capitalize">{skill.replace(/([A-Z])/g, ' $1')}</label>
+                                            <select 
+                                                value={skillsData[student.id]?.[skill] || ''} 
+                                                onChange={(e) => setSkillsData(prev => ({ ...prev, [student.id]: { ...prev[student.id], [skill]: e.target.value } }))} 
+                                                className="w-full p-2 border rounded"
+                                            >
+                                                <option value="">Select Rating</option>
+                                                <option value="Excellent">Excellent</option>
+                                                <option value="Very Good">Very Good</option>
+                                                <option value="Good">Good</option>
+                                                <option value="Fair">Fair</option>
+                                                <option value="Poor">Poor</option>
+                                            </select>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-6 flex justify-end">
+                        <button onClick={async () => {
+                            setSavingSkills(true);
+                            try {
+                                const termNumber = parseInt(currentTerm.split(' ')[1]);
+                                const promises = Object.entries(skillsData).map(async ([studentId, data]) => {
+                                    const d = data as any;
+                                    const skills: StudentSkills = {
+                                        id: `${studentId}_${currentTerm.replace(' ', '_')}`,
+                                        studentId,
+                                        classId: selectedClassId || '',
+                                        term: termNumber as 1 | 2 | 3,
+                                        academicYear: ACADEMIC_YEAR,
+                                        ...d
+                                    };
+                                    return db.saveStudentSkills(skills);
+                                });
+                                await Promise.all(promises.filter(Boolean));
+                                showToast('Skills saved successfully', { type: 'success' });
+                                setSkillsModalOpen(false);
+                            } catch (e) {
+                                console.error(e);
+                                showToast('Error saving skills', { type: 'error' });
+                            } finally {
+                                setSavingSkills(false);
+                            }
+                        }} disabled={savingSkills} className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 flex items-center">
+                            {savingSkills && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>}
+                            {savingSkills ? 'Saving...' : 'Save All Skills'}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 

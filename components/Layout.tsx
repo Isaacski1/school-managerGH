@@ -113,7 +113,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#fafafa] flex">
+    <div className="h-screen bg-[#fafafa] flex">
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div 
@@ -162,6 +162,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <NavItem href="/admin/attendance" icon={BarChart} label="Student Attendance" />
               <NavItem href="/admin/teacher-attendance" icon={ClipboardCheck} label="Teacher Attendance" />
               <NavItem href="/admin/reports" icon={BookOpen} label="Reports" />
+              <NavItem href="/admin/report-card" icon={BookOpen} label="Report Card" />
               <NavItem href="/admin/timetable" icon={CalendarDays} label="Timetable" />
               <NavItem href="/admin/settings" icon={Settings} label="Settings" />
             </>

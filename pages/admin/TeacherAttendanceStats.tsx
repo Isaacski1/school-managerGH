@@ -11,11 +11,19 @@ const TeacherAttendanceStats = () => {
     const [vacationDate, setVacationDate] = useState('');
 
     useEffect(() => {
-        const fetchAnalytics = async () => {
+        const fetchInitialData = async () => {
             setLoading(true);
             try {
+                // Fetch school config to get the reopen date
+                const config = await db.getSchoolConfig();
+                const startDate = termStartDate || config.schoolReopenDate || undefined;
+                
+                if (config.schoolReopenDate && !termStartDate) {
+                    setTermStartDate(config.schoolReopenDate);
+                }
+
                 const data = await db.getTeacherAttendanceAnalytics(
-                    termStartDate || undefined,
+                    startDate,
                     vacationDate || undefined
                 );
                 setAnalytics(data);
@@ -26,7 +34,7 @@ const TeacherAttendanceStats = () => {
             }
         };
 
-        fetchAnalytics();
+        fetchInitialData();
     }, [termStartDate, vacationDate]);
 
     const getTrendIcon = (trend: string) => {

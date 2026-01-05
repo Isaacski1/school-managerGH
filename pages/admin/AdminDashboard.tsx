@@ -4,7 +4,7 @@ import Layout from '../../components/Layout';
 import { showToast } from '../../services/toast';
 import { db } from '../../services/mockDb';
 import { firestore } from '../../services/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { 
   Users, 
   GraduationCap, 
@@ -27,7 +27,7 @@ import {
   AlertOctagon
 } from 'lucide-react';
 import { Notice, Student, TeacherAttendanceRecord } from '../../types';
-import { CLASSES_LIST, calculateGrade, getGradeColor, CURRENT_TERM } from '../../constants';
+import { CLASSES_LIST, calculateGrade, getGradeColor, CURRENT_TERM, ACADEMIC_YEAR } from '../../constants';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -108,8 +108,7 @@ const AdminDashboard = () => {
         // Get all teacher attendance records for term statistics
         const allTeacherRecords = await db.getAllTeacherAttendanceRecords();
 
-        // Check for missed attendance (yesterday)
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        // Check for missed attendance on the previous school day (weekday)
         const missedAlerts: any[] = [];
 
         // Only check if school has reopened
@@ -117,18 +116,34 @@ const AdminDashboard = () => {
         const reopenDateObj = config.schoolReopenDate ? new Date(config.schoolReopenDate) : null;
         const schoolHasReopened = !reopenDateObj || currentDate >= reopenDateObj;
 
-        if (schoolHasReopened && yesterday >= (config.schoolReopenDate || yesterday)) {
-            for (const teacher of teachers.filter(t => t.role === 'TEACHER')) {
-                const yesterdayRecord = await db.getTeacherAttendance(teacher.id, yesterday);
-                if (!yesterdayRecord) {
-                    missedAlerts.push({
-                        teacherId: teacher.id,
-                        teacherName: teacher.name,
-                        date: yesterday,
-                        classes: teacher.assignedClassIds?.map(id =>
-                            CLASSES_LIST.find(c => c.id === id)?.name
-                        ).join(', ') || 'Not Assigned'
-                    });
+        if (schoolHasReopened) {
+            // Find the most recent weekday before today
+            const today = new Date();
+            const previousWeekday = new Date(today);
+            let dayOfWeek = previousWeekday.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+            // Go back one day at a time until we hit a weekday (Mon-Fri)
+            do {
+                previousWeekday.setDate(previousWeekday.getDate() - 1);
+                dayOfWeek = previousWeekday.getDay();
+            } while (dayOfWeek === 0 || dayOfWeek === 6); // Skip Sunday (0) and Saturday (6)
+
+            const previousSchoolDay = previousWeekday.toISOString().split('T')[0];
+
+            // Only check if the previous school day is on or after the reopen date
+            if (previousSchoolDay >= (config.schoolReopenDate || previousSchoolDay)) {
+                for (const teacher of teachers.filter(t => t.role === 'TEACHER')) {
+                    const attendanceRecord = await db.getTeacherAttendance(teacher.id, previousSchoolDay);
+                    if (!attendanceRecord) {
+                        missedAlerts.push({
+                            teacherId: teacher.id,
+                            teacherName: teacher.name,
+                            date: previousSchoolDay,
+                            classes: teacher.assignedClassIds?.map(id =>
+                                CLASSES_LIST.find(c => c.id === id)?.name
+                            ).join(', ') || 'Not Assigned'
+                        });
+                    }
                 }
             }
         }
@@ -445,14 +460,34 @@ const AdminDashboard = () => {
     fetchData();
   }, []);
 
-    // Real-time listener: refresh lightweight stats when attendance collection changes
+    // Real-time listeners: refresh stats when attendance, assessments, or config change
     useEffect(() => {
         const attendanceRef = collection(firestore, 'attendance');
-        const unsub = onSnapshot(attendanceRef, () => {
+        const assessmentsRef = collection(firestore, 'assessments');
+        const configRef = doc(firestore, 'settings', 'schoolConfig');
+        const unsubAttendance = onSnapshot(attendanceRef, () => {
             // Keep this lightweight — update class attendance and counters
             fetchStats().catch(e => console.error('Error refreshing stats on attendance change', e));
         });
-        return () => unsub();
+        const unsubAssessments = onSnapshot(assessmentsRef, () => {
+            // Refresh all data when assessments change to update performance stats
+            fetchData().catch(e => console.error('Error refreshing data on assessments change', e));
+        });
+        const unsubConfig = onSnapshot(configRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data() as any;
+                setSchoolConfig({
+                    academicYear: data.academicYear || ACADEMIC_YEAR,
+                    currentTerm: data.currentTerm || `Term ${CURRENT_TERM}`,
+                    schoolReopenDate: data.schoolReopenDate || ''
+                });
+            }
+        });
+        return () => {
+            unsubAttendance();
+            unsubAssessments();
+            unsubConfig();
+        };
     }, []);
 
     // Real-time polling effect
@@ -1369,7 +1404,7 @@ const AdminDashboard = () => {
               </div>
               <div>
                 <h3 className="font-bold text-red-900 text-lg">Attendance Alerts</h3>
-                <p className="text-red-700 text-sm">{missedAttendanceAlerts.length} teacher{missedAttendanceAlerts.length !== 1 ? 's' : ''} missed attendance yesterday</p>
+                <p className="text-red-700 text-sm">{missedAttendanceAlerts.length} teacher{missedAttendanceAlerts.length !== 1 ? 's' : ''} missed attendance on {new Date(missedAttendanceAlerts[0].date).toLocaleDateString()}</p>
               </div>
             </div>
             <div className="space-y-3">
@@ -1631,6 +1666,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* Teacher Term Attendance Statistics */}
+          {(schoolConfig.schoolReopenDate !== new Date().toISOString().split('T')[0]) && (
           <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl shadow-lg border border-blue-200 flex flex-col min-h-[300px] hover:shadow-xl transition-shadow duration-300">
               <div className="p-4 sm:p-6 border-b border-blue-200 flex justify-between items-center">
                   <div>
@@ -1698,6 +1734,7 @@ const AdminDashboard = () => {
                   )}
               </div>
           </div>
+          )}
         </div>
       </div>
       

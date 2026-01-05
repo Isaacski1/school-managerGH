@@ -62,6 +62,32 @@ export interface ComputedGrade {
   remark: string; // Excellent, Very Good, etc.
 }
 
+export interface StudentRemark {
+  id: string;
+  studentId: string;
+  classId: string;
+  term: 1 | 2 | 3;
+  academicYear: string;
+  remark: string;
+  behaviorTag: 'Excellent' | 'Good' | 'Needs Improvement';
+  teacherId: string;
+  dateCreated: string; // YYYY-MM-DD
+}
+
+export interface StudentSkills {
+    id: string;
+    studentId: string;
+    classId: string;
+    term: 1 | 2 | 3;
+    academicYear: string;
+    punctuality: 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor';
+    neatness: 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor';
+    conduct: 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor';
+    attitudeToWork: 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor';
+    classParticipation: 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor';
+    homeworkCompletion: 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor';
+}
+
 export interface Notice {
   id: string;
   message: string;

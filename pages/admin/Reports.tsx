@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { db } from '../../services/mockDb';
+
 import { CLASSES_LIST, CURRENT_TERM, ACADEMIC_YEAR, calculateGrade, getGradeColor } from '../../constants';
 import { Download } from 'lucide-react';
 
@@ -9,67 +10,84 @@ const Reports = () => {
     const [reportData, setReportData] = useState<any[]>([]);
     const [subjects, setSubjects] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
+    const [schoolConfig, setSchoolConfig] = useState<{ currentTerm: string; academicYear: string; schoolReopenDate: string }>({ currentTerm: `Term ${CURRENT_TERM}`, academicYear: ACADEMIC_YEAR, schoolReopenDate: '' });
+
+    const fetchReport = async () => {
+        if(subjects.length === 0) return;
+        setLoading(true);
+
+        // Fetch latest config
+        const config = await db.getSchoolConfig();
+        setSchoolConfig({ currentTerm: config.currentTerm || `Term ${CURRENT_TERM}`, academicYear: config.academicYear || ACADEMIC_YEAR, schoolReopenDate: config.schoolReopenDate || '' });
+
+        let dynamicTerm = CURRENT_TERM;
+        if (config.currentTerm) {
+            const match2 = config.currentTerm.match(/\d+/);
+            if (match2) dynamicTerm = parseInt(match2[0], 10);
+        }
+
+        const students = await db.getStudents(selectedClass);
+        const remarks = await db.getStudentRemarks(selectedClass);
+
+        const data = await Promise.all(students.map(async (student) => {
+            let totalScore = 0;
+            let subjectCount = 0;
+            const scores: any = {};
+
+            for (const subject of subjects) {
+                const assessments = await db.getAssessments(selectedClass, subject);
+                const assessment = assessments.find(a => a.studentId === student.id && a.term === dynamicTerm);
+
+                if (assessment) {
+                    // Use calculated total if available or sum up parts
+                    const currentTotal = assessment.total || ((assessment.testScore||0) + (assessment.homeworkScore||0) + (assessment.projectScore||0) + (assessment.examScore||0));
+                    scores[subject] = currentTotal;
+                    totalScore += currentTotal;
+                    subjectCount++;
+                } else {
+                    scores[subject] = '-';
+                }
+            }
+
+            const average = subjectCount > 0 ? (totalScore / subjectCount).toFixed(1) : 0;
+            const studentRemark = remarks.find(r => r.studentId === student.id && Number(r.term) === dynamicTerm);
+
+            return {
+                student,
+                scores,
+                totalScore,
+                average,
+                remark: studentRemark ? studentRemark.remark : 'N/A'
+            };
+        }));
+
+        // Sort by total score
+        data.sort((a, b) => b.totalScore - a.totalScore);
+        setReportData(data);
+        setLoading(false);
+    };
 
     useEffect(() => {
         const fetchSubjects = async () => {
             const data = await db.getSubjects();
             setSubjects(data);
+            const config = await db.getSchoolConfig();
+            setSchoolConfig({ currentTerm: config.currentTerm || `Term ${CURRENT_TERM}`, academicYear: config.academicYear || ACADEMIC_YEAR, schoolReopenDate: config.schoolReopenDate || '' });
         }
         fetchSubjects();
     }, []);
 
     useEffect(() => {
-        const fetchReport = async () => {
-            if(subjects.length === 0) return;
-            setLoading(true);
-            const students = await db.getStudents(selectedClass);
-            
-            const data = await Promise.all(students.map(async (student) => {
-                let totalScore = 0;
-                let subjectCount = 0;
-                const scores: any = {};
-
-                for (const subject of subjects) {
-                    const assessments = await db.getAssessments(selectedClass, subject);
-                    const assessment = assessments.find(a => a.studentId === student.id && a.term === CURRENT_TERM);
-                    
-                    if (assessment) {
-                        // Use calculated total if available or sum up parts
-                        const currentTotal = assessment.total || ((assessment.testScore||0) + (assessment.homeworkScore||0) + (assessment.projectScore||0) + (assessment.examScore||0));
-                        scores[subject] = currentTotal;
-                        totalScore += currentTotal;
-                        subjectCount++;
-                    } else {
-                        scores[subject] = '-';
-                    }
-                }
-
-                const average = subjectCount > 0 ? (totalScore / subjectCount).toFixed(1) : 0;
-                
-                return {
-                    student,
-                    scores,
-                    totalScore,
-                    average
-                };
-            }));
-            
-            // Sort by total score
-            data.sort((a, b) => b.totalScore - a.totalScore);
-            setReportData(data);
-            setLoading(false);
-        };
-
-        if(subjects.length > 0) {
-            fetchReport();
-        }
+        fetchReport();
     }, [selectedClass, subjects]);
+
+
 
     const downloadCSV = () => {
         if (reportData.length === 0) return;
 
         // 1. Define Headers
-        const headers = ['Position', 'Student Name', ...subjects, 'Total Score', 'Average Grade'];
+        const headers = ['Position', 'Student Name', ...subjects, 'Total Score', 'Average Grade', 'Remark'];
 
         // 2. Format Rows
         const rows = reportData.map((row, index) => {
@@ -80,7 +98,8 @@ const Reports = () => {
                 `"${row.student.name}"`, 
                 ...subjectScores,
                 row.totalScore,
-                row.average
+                row.average,
+                `"${row.remark}"`
             ];
         });
 
@@ -96,7 +115,7 @@ const Reports = () => {
         const link = document.createElement('a');
         
         const className = CLASSES_LIST.find(c => c.id === selectedClass)?.name || 'Class';
-        const filename = `${className}_Report_Term${CURRENT_TERM}.csv`;
+        const filename = `${className}_Report_${schoolConfig.academicYear.replace('-', '_')}_Term${schoolConfig.currentTerm?.match(/\d+/)?.[0] || CURRENT_TERM}.csv`;
         
         link.setAttribute('href', url);
         link.setAttribute('download', filename);
@@ -158,7 +177,7 @@ const Reports = () => {
                         </div>
 
                         <div className="text-sm text-slate-500 print:text-slate-900 print:font-semibold">
-                            Term {CURRENT_TERM} | {ACADEMIC_YEAR}
+                            {schoolConfig.currentTerm} | {schoolConfig.academicYear}
                         </div>
                     </div>
                     <button 
@@ -186,6 +205,7 @@ const Reports = () => {
                                         ))}
                                         <th className="px-4 py-3 border border-slate-200 text-center w-20 bg-emerald-50 text-emerald-900 print:bg-slate-100">Total</th>
                                         <th className="px-4 py-3 border border-slate-200 text-center w-20 bg-blue-50 text-blue-900 print:bg-slate-100">Avg</th>
+                                        <th className="px-4 py-3 border border-slate-200 min-w-[200px]">Remark</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -207,10 +227,11 @@ const Reports = () => {
                                             })}
                                             <td className="px-4 py-2 border border-slate-200 text-center font-bold bg-emerald-50 text-emerald-900 print:bg-transparent">{row.totalScore}</td>
                                             <td className="px-4 py-2 border border-slate-200 text-center font-bold bg-blue-50 text-blue-900 print:bg-transparent">{row.average}</td>
+                                            <td className="px-4 py-2 border border-slate-200 text-sm">{row.remark}</td>
                                         </tr>
                                     ))}
                                     {reportData.length === 0 && (
-                                        <tr><td colSpan={subjects.length + 4} className="p-8 text-center text-slate-400">No students found.</td></tr>
+                                        <tr><td colSpan={subjects.length + 5} className="p-8 text-center text-slate-400">No students found.</td></tr>
                                     )}
                                 </tbody>
                             </table>
