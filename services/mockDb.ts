@@ -2,8 +2,8 @@ import { firestore } from './firebase';
 import { 
   collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, query, where, orderBy, limit 
 } from 'firebase/firestore';
-import { User, UserRole, Student, AttendanceRecord, TeacherAttendanceRecord, Assessment, Notice, ClassTimetable, SystemNotification, MonthlyTeacherAttendance, TeacherAttendanceAnalytics, StudentRemark, StudentSkills } from "../types";
-import { DEFAULT_SUBJECTS, CURRENT_TERM, ACADEMIC_YEAR, CLASSES_LIST } from "../constants";
+import { User, UserRole, Student, AttendanceRecord, TeacherAttendanceRecord, Assessment, Notice, ClassTimetable, SystemNotification, MonthlyTeacherAttendance, TeacherAttendanceAnalytics, StudentRemark, StudentSkills, ClassSubjectConfig, ClassRoom } from "../types";
+import { CURRENT_TERM, ACADEMIC_YEAR, CLASSES_LIST } from "../constants";
 
 class FirestoreService {
   // Helper to get array from collection
@@ -22,7 +22,8 @@ class FirestoreService {
           academicYear: ACADEMIC_YEAR,
           currentTerm: `Term ${CURRENT_TERM}`,
           headTeacherRemark: 'An outstanding performance. The school is proud of you.',
-          termEndDate: '2024-12-20'
+          termEndDate: '2024-12-20',
+          schoolReopenDate: '2024-01-01'
       };
   }
 
@@ -67,35 +68,44 @@ class FirestoreService {
   }
 
   // --- Subjects ---
-  async getSubjects(): Promise<string[]> {
-      const docRef = doc(firestore, 'settings', 'subjects');
+  async getSubjects(classId: string): Promise<string[]> {
+      const docRef = doc(firestore, 'class_subjects', classId);
       const snap = await getDoc(docRef);
-      if (snap.exists()) return snap.data().list;
-      // Initialize if empty
-      await setDoc(docRef, { list: DEFAULT_SUBJECTS });
-      return DEFAULT_SUBJECTS;
+      if (snap.exists()) return (snap.data() as ClassSubjectConfig).subjects;
+      return []; // Return empty array if no subjects are configured for the class
   }
 
-  async addSubject(name: string): Promise<void> {
-      const current = await this.getSubjects();
+  async addSubject(classId: string, name: string): Promise<void> {
+      const current = await this.getSubjects(classId);
       if (!current.includes(name)) {
-          await setDoc(doc(firestore, 'settings', 'subjects'), { list: [...current, name] });
+          await setDoc(doc(firestore, 'class_subjects', classId), { subjects: [...current, name] });
       }
   }
   
-  async updateSubject(oldName: string, newName: string): Promise<void> {
-       const current = await this.getSubjects();
+  async updateSubject(classId: string, oldName: string, newName: string): Promise<void> {
+       const current = await this.getSubjects(classId);
        const idx = current.indexOf(oldName);
        if (idx !== -1) {
            current[idx] = newName;
-           await setDoc(doc(firestore, 'settings', 'subjects'), { list: current });
+           await setDoc(doc(firestore, 'class_subjects', classId), { subjects: current });
        }
   }
 
-  async deleteSubject(name: string): Promise<void> {
-      const current = await this.getSubjects();
+  async deleteSubject(classId: string, name: string): Promise<void> {
+      const current = await this.getSubjects(classId);
       const updated = current.filter(s => s !== name);
-      await setDoc(doc(firestore, 'settings', 'subjects'), { list: updated });
+      await setDoc(doc(firestore, 'class_subjects', classId), { subjects: updated });
+  }
+
+  async seedClassSubjects(classId: string, subjects: string[]): Promise<void> {
+      await setDoc(doc(firestore, 'class_subjects', classId), { subjects });
+  }
+
+  async resetAllClassSubjects(): Promise<void> {
+      const q = collection(firestore, 'class_subjects');
+      const snap = await getDocs(q);
+      const deletions = snap.docs.map(d => deleteDoc(doc(firestore, 'class_subjects', d.id)));
+      await Promise.all(deletions);
   }
 
   // --- Attendance ---
@@ -146,7 +156,7 @@ class FirestoreService {
 
       if (seedDefaults) {
           const students = await this.getStudents(classId);
-          const subjects = await this.getSubjects();
+          const subjects = await this.getSubjects(classId); // Updated to use classId
           const ops: Promise<void>[] = [];
 
           for (const student of students) {
@@ -247,7 +257,8 @@ class FirestoreService {
         .map(d => d.data() as Assessment)
         .filter(a => true); // Show assessments from all terms
     
-    const subjects = await this.getSubjects();
+    // Use the class-specific subjects
+    const subjects = await this.getSubjects(classId);
 
     const grades = subjects.map(subject => {
         const found = allAssessments.find(a => a.subject === subject);
@@ -325,6 +336,15 @@ class FirestoreService {
   async getAllTeacherAttendanceRecords(): Promise<TeacherAttendanceRecord[]> {
       return this.getCollection<TeacherAttendanceRecord>('teacher_attendance');
   }
+
+  async resetAllTeacherAttendance(): Promise<void> {
+      const q = collection(firestore, 'teacher_attendance');
+      const snap = await getDocs(q);
+      const deletions = snap.docs.map(d => deleteDoc(doc(firestore, 'teacher_attendance', d.id)));
+      await Promise.all(deletions);
+  }
+
+
 
     // --- Student Remarks ---
     async getStudentRemarks(classId: string): Promise<StudentRemark[]> {

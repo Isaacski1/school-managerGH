@@ -3,9 +3,54 @@ import Layout from '../../components/Layout';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../services/mockDb';
 import { Student, Assessment } from '../../types';
-import { CLASSES_LIST, ACADEMIC_YEAR, CURRENT_TERM, calculateGrade, getGradeColor } from '../../constants';
+import { CLASSES_LIST, ACADEMIC_YEAR, CURRENT_TERM, calculateGrade, getGradeColor, calculateTotalScore } from '../../constants';
 import { Save } from 'lucide-react';
 import { showToast } from '../../services/toast';
+
+const nurserySubjects = [
+    "Language & Literacy",
+    "Numeracy",
+    "Environmental Studies",
+    "Creative Arts",
+    "Physical Development",
+    "Social & Emotional Development",
+    "Rhymes, Songs & Storytelling"
+];
+
+const kgSubjects = [
+    "Literacy & Language",
+    "Numeracy",
+    "OWOP",
+    "Creative Art",
+    "Physical Education"
+];
+
+const primarySubjects = [
+    "English Language",
+    "Mathematics",
+    "Science",
+    "ICT",
+    "Religious & Moral Education (RME)",
+    "Ghanaian Language",
+    "Our World Our People (OWOP)",
+    "Creative Arts",
+    "Physical Education"
+];
+
+const jhsSubjects = [
+    "English Language",
+    "Mathematics",
+    "Integrated Science",
+    "Social Studies",
+    "Religious & Moral Education (RME)",
+    "ICT",
+    "French",
+    "Ghanaian Language",
+    "Creative Arts & Design",
+    "Physical Education",
+    "Career Technology",
+    "Computing / Coding"
+];
 
 const AssessmentPage = () => {
   const { user } = useAuth();
@@ -15,7 +60,7 @@ const AssessmentPage = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [subjects, setSubjects] = useState<string[]>([]);
   const [selectedSubject, setSelectedSubject] = useState('');
-  const [assessments, setAssessments] = useState<Record<string, Partial<Assessment>>>({});
+  const [assessments, setAssessments] = useState<Record<string, Assessment>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
     // School config (term + academic year) fetched from DB
@@ -53,17 +98,48 @@ const AssessmentPage = () => {
         loadConfig();
     }, []);
 
-  // Fetch subjects first
   useEffect(() => {
-    const loadSubjects = async () => {
-        const subs = await db.getSubjects();
-        setSubjects(subs);
-        if (subs.length > 0) {
-            setSelectedSubject(subs[0]);
+    const loadSubjectsForClass = async () => {
+        if (!selectedClassId) {
+            setSubjects([]);
+            setSelectedSubject('');
+            return;
+        };
+
+        const selectedClassInfo = CLASSES_LIST.find(c => c.id === selectedClassId);
+        let currentSubjects: string[] = [];
+
+        if (selectedClassInfo) {
+            switch (selectedClassInfo.level) {
+                case 'NURSERY':
+                    currentSubjects = nurserySubjects;
+                    break;
+                case 'KG':
+                    currentSubjects = kgSubjects;
+                    break;
+                case 'PRIMARY':
+                    currentSubjects = primarySubjects;
+                    break;
+                case 'JHS':
+                    currentSubjects = jhsSubjects;
+                    break;
+                default:
+                    currentSubjects = await db.getSubjects(selectedClassId);
+            }
+        } else {
+            currentSubjects = await db.getSubjects(selectedClassId);
+        }
+        
+        setSubjects(currentSubjects);
+        if (currentSubjects.length > 0) {
+            setSelectedSubject(currentSubjects[0]);
+        } else {
+            setSelectedSubject('');
         }
     };
-    loadSubjects();
-  }, []);
+    
+    loadSubjectsForClass();
+  }, [selectedClassId]);
 
   useEffect(() => {
     if (!selectedClassId || !selectedSubject) return;
@@ -85,19 +161,21 @@ const AssessmentPage = () => {
             }
 
             // Map to state
-            const map: Record<string, Partial<Assessment>> = {};
+            const map: Record<string, Assessment> = {};
             studentsList.forEach(s => {
                 const found = existing.find(a => a.studentId === s.id && a.term === dynamicTerm);
                 map[s.id] = found || {
+                        id: `${s.id}_${selectedSubject}_${dynamicTerm}_${schoolConfig.academicYear}`,
                         studentId: s.id,
                         classId: selectedClassId,
-                        term: dynamicTerm,
+                        term: dynamicTerm as 1|2|3,
                         academicYear: schoolConfig.academicYear,
                         subject: selectedSubject,
                         testScore: 0,
                         homeworkScore: 0,
                         projectScore: 0,
                         examScore: 0,
+                        total: 0
                 };
             });
       setAssessments(map);
@@ -126,12 +204,7 @@ const AssessmentPage = () => {
     });
   };
 
-  const calculateTotalScore = (a: Partial<Assessment>) => {
-      // CA (50 Marks) + Exam (100 Marks scaled to 50%) = 100%
-      const ca = (a.testScore || 0) + (a.homeworkScore || 0) + (a.projectScore || 0);
-      const examScaled = (a.examScore || 0) * 0.5; 
-      return Math.round(ca + examScaled);
-  };
+
 
   const handleSave = async () => {
       if (!selectedClassId) return;
@@ -302,7 +375,7 @@ const AssessmentPage = () => {
                                         type="number" 
                                         min="0" 
                                         max={LIMITS.examScore}
-                                        className="w-full text-center border border-blue-500 rounded p-1 focus:ring-2 focus:ring-blue-300 outline-none font-bold text-white bg-blue-600 shadow-sm"
+                                        className="w-full text-center border border-blue-500 rounded p-1 focus:ring-2 focus:ring-blue-300 outline-none font-bold text-slate-800 bg-white shadow-sm"
                                         value={data.examScore || 0}
                                         onChange={(e) => handleChange(student.id, 'examScore', e.target.value)}
                                         onFocus={(e) => e.target.select()}

@@ -1,3 +1,4 @@
+import schoolLogo from '../../logo/school_logo.jpg';
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { db } from '../../services/mockDb';
@@ -65,7 +66,7 @@ const ReportCard = () => {
         const data = {
             schoolInfo: {
                 name: schoolConfig.schoolName || 'Noble Care Academy',
-                logo: 'https://scontent.facc5-1.fna.fbcdn.net/v/t39.30808-6/277561581_380661664069143_4955839060397865014_n.jpg?_nc_cat=102&ccb=1-7&_nc_sid=6ee11a&_nc_eui2=AeFJNGCSI96CBW1S8R2sOotMrM2NNo5aPtOszY02jlo-04y0fL8D99GjvJaBXuzqH8OYrZRdn_DgSU4Kgwvj36D2&_nc_ohc=GeYOZj7SI8AQ7kNvwFo1QMy&_nc_oc=AdnCfyquuglPpsQYtG1zbC9KAOmrLOH7MKUJTuoVKPm7FdxXjqnrHmzUSj4b3hioGUo&_nc_zt=23&_nc_ht=scontent.facc5-1.fna&_nc_gid=DdsLMQJFSMTnkkiquIQTNQ&oh=00_Afo5zCyNS0kVyQ6p_ArT53WNpaTgIKDpPQScqRwUn3HyKA&oe=695CE41D',
+                logo: schoolLogo,
                 address: schoolConfig.address || 'Agona Swedru, Asafo road - Two brothers',
                 phone: schoolConfig.phone || '0248889590',
                 email: schoolConfig.email || 'info@noblecare.edu.gh',

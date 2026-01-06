@@ -12,6 +12,11 @@ export interface User {
   assignedClassIds?: string[]; // Changed from single ID to array of IDs
 }
 
+export interface ClassSubjectConfig {
+  classId: string;
+  subjects: string[];
+}
+
 export interface ClassRoom {
   id: string;
   name: string; // e.g., "Primary 4", "JHS 1"
@@ -108,7 +113,7 @@ export interface TimeSlot {
   startTime: string; // e.g. "08:00"
   endTime: string;   // e.g. "09:00"
   subject: string;   // e.g. "Mathematics" or "Break"
-  type: 'lesson' | 'break' | 'worship' | 'closing';
+  type: 'lesson' | 'break' | 'worship' | 'closing' | 'assembly' | 'arrival';
 }
 
 export interface ClassTimetable {

@@ -112,6 +112,11 @@ const AppRoutes = () => {
           <AssessmentPage />
         </ProtectedRoute>
       } />
+      <Route path="/teacher/my-attendance" element={
+        <ProtectedRoute allowedRoles={[UserRole.TEACHER]}>
+          <TeacherAttendance />
+        </ProtectedRoute>
+      } />
     </Routes>
   );
 };

@@ -126,9 +126,7 @@ const ManageTeachers = () => {
       const deletePromises = recordsToDelete.map(r => deleteDoc(doc(firestore, 'teacher_attendance', r.id)));
       await Promise.all(deletePromises);
 
-      // Note: We cannot delete the Auth account from the Client SDK (requires Admin SDK).
-      // The user will lose access to data (Firestore rules) but the login might still "work" technically
-      // until you disable them in the Firebase Console.
+
     } catch (error) {
       console.error("Failed to delete teacher", error);
             // Revert if failed
@@ -232,8 +230,7 @@ const ManageTeachers = () => {
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 mb-2">Remove Teacher?</h3>
                 <p className="text-sm text-slate-500 mb-6">
-                    This removes their profile from the system. <br/>
-                    <span className="text-xs text-red-500 font-bold">Note: You must manually disable their account in Firebase Console to stop login.</span>
+                    This removes their profile and disables their login account from the system.
                 </p>
                 <div className="flex gap-3 w-full">
                     <button 

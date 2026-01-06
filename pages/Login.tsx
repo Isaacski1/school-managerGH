@@ -97,7 +97,7 @@ const Login = () => {
         <div className="text-center mb-8">
           <div className="mx-auto w-28 h-28 mb-4 relative p-2 bg-white rounded-full shadow-sm border border-amber-100">
             <img 
-              src="https://scontent.facc5-1.fna.fbcdn.net/v/t39.30808-6/277561581_380661664069143_4955839060397865014_n.jpg?_nc_cat=102&ccb=1-7&_nc_sid=6ee11a&_nc_eui2=AeFJNGCSI96CBW1S8R2sOotMrM2NNo5aPtOszY02jlo-04y0fL8D99GjvJaBXuzqH8OYrZRdn_DgSU4Kgwvj36D2&_nc_ohc=GeYOZj7SI8AQ7kNvwFo1QMy&_nc_oc=AdnCfyquuglPpsQYtG1zbC9KAOmrLOH7MKUJTuoVKPm7FdxXjqnrHmzUSj4b3hioGUo&_nc_zt=23&_nc_ht=scontent.facc5-1.fna&_nc_gid=DdsLMQJFSMTnkkiquIQTNQ&oh=00_Afo5zCyNS0kVyQ6p_ArT53WNpaTgIKDpPQScqRwUn3HyKA&oe=695CE41D" 
+              src="logo/school_logo.jpg" 
               alt="Noble Care Academy Logo" 
               className="w-full h-full object-contain rounded-full"
               onError={(e) => {

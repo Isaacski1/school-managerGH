@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { db } from '../../services/mockDb';
 
-import { CLASSES_LIST, CURRENT_TERM, ACADEMIC_YEAR, calculateGrade, getGradeColor } from '../../constants';
+import { CLASSES_LIST, CURRENT_TERM, ACADEMIC_YEAR, calculateGrade, getGradeColor, calculateTotalScore, nurserySubjects, kgSubjects, primarySubjects, jhsSubjects } from '../../constants';
 import { Download } from 'lucide-react';
+import { Assessment } from '../../types';
 
 const Reports = () => {
     const [selectedClass, setSelectedClass] = useState(CLASSES_LIST[0].id);
@@ -12,74 +13,86 @@ const Reports = () => {
     const [loading, setLoading] = useState(false);
     const [schoolConfig, setSchoolConfig] = useState<{ currentTerm: string; academicYear: string; schoolReopenDate: string }>({ currentTerm: `Term ${CURRENT_TERM}`, academicYear: ACADEMIC_YEAR, schoolReopenDate: '' });
 
-    const fetchReport = async () => {
-        if(subjects.length === 0) return;
-        setLoading(true);
+    useEffect(() => {
+        const loadReportData = async () => {
+            setLoading(true);
 
-        // Fetch latest config
-        const config = await db.getSchoolConfig();
-        setSchoolConfig({ currentTerm: config.currentTerm || `Term ${CURRENT_TERM}`, academicYear: config.academicYear || ACADEMIC_YEAR, schoolReopenDate: config.schoolReopenDate || '' });
-
-        let dynamicTerm = CURRENT_TERM;
-        if (config.currentTerm) {
-            const match2 = config.currentTerm.match(/\d+/);
-            if (match2) dynamicTerm = parseInt(match2[0], 10);
-        }
-
-        const students = await db.getStudents(selectedClass);
-        const remarks = await db.getStudentRemarks(selectedClass);
-
-        const data = await Promise.all(students.map(async (student) => {
-            let totalScore = 0;
-            let subjectCount = 0;
-            const scores: any = {};
-
-            for (const subject of subjects) {
-                const assessments = await db.getAssessments(selectedClass, subject);
-                const assessment = assessments.find(a => a.studentId === student.id && a.term === dynamicTerm);
-
-                if (assessment) {
-                    // Use calculated total if available or sum up parts
-                    const currentTotal = assessment.total || ((assessment.testScore||0) + (assessment.homeworkScore||0) + (assessment.projectScore||0) + (assessment.examScore||0));
-                    scores[subject] = currentTotal;
-                    totalScore += currentTotal;
-                    subjectCount++;
-                } else {
-                    scores[subject] = '-';
+            // 1. Determine subjects for the selected class
+            const selectedClassInfo = CLASSES_LIST.find(c => c.id === selectedClass);
+            let currentSubjects: string[] = [];
+            if (selectedClassInfo) {
+                switch (selectedClassInfo.level) {
+                    case 'NURSERY': currentSubjects = nurserySubjects; break;
+                    case 'KG': currentSubjects = kgSubjects; break;
+                    case 'PRIMARY': currentSubjects = primarySubjects; break;
+                    case 'JHS': currentSubjects = jhsSubjects; break;
+                    default: currentSubjects = await db.getSubjects();
                 }
+            } else {
+                currentSubjects = await db.getSubjects();
+            }
+            setSubjects(currentSubjects);
+
+            if (currentSubjects.length === 0) {
+                setReportData([]);
+                setLoading(false);
+                return;
             }
 
-            const average = subjectCount > 0 ? (totalScore / subjectCount).toFixed(1) : 0;
-            const studentRemark = remarks.find(r => r.studentId === student.id && Number(r.term) === dynamicTerm);
-
-            return {
-                student,
-                scores,
-                totalScore,
-                average,
-                remark: studentRemark ? studentRemark.remark : 'N/A'
-            };
-        }));
-
-        // Sort by total score
-        data.sort((a, b) => b.totalScore - a.totalScore);
-        setReportData(data);
-        setLoading(false);
-    };
-
-    useEffect(() => {
-        const fetchSubjects = async () => {
-            const data = await db.getSubjects();
-            setSubjects(data);
+            // 2. Fetch all other data
             const config = await db.getSchoolConfig();
             setSchoolConfig({ currentTerm: config.currentTerm || `Term ${CURRENT_TERM}`, academicYear: config.academicYear || ACADEMIC_YEAR, schoolReopenDate: config.schoolReopenDate || '' });
-        }
-        fetchSubjects();
-    }, []);
 
-    useEffect(() => {
-        fetchReport();
-    }, [selectedClass, subjects]);
+            let dynamicTerm = CURRENT_TERM;
+            if (config.currentTerm) {
+                const match = config.currentTerm.match(/\d+/);
+                if (match) dynamicTerm = parseInt(match[0], 10);
+            }
+
+            const students = await db.getStudents(selectedClass);
+            const remarks = await db.getStudentRemarks(selectedClass);
+
+            const data = await Promise.all(students.map(async (student) => {
+                let totalScore = 0;
+                let subjectCount = 0;
+                const scores: any = {};
+
+                for (const subject of currentSubjects) {
+                    const assessments = await db.getAssessments(selectedClass, subject);
+                    const assessment = assessments.find(a => a.studentId === student.id && a.term === dynamicTerm);
+
+                    if (assessment) {
+                        const currentTotal = assessment.total ?? calculateTotalScore(assessment);
+                        scores[subject] = currentTotal;
+                        totalScore += currentTotal;
+                        subjectCount++;
+                    } else {
+                        scores[subject] = '-';
+                    }
+                }
+
+                const average = subjectCount > 0 ? (totalScore / subjectCount).toFixed(1) : "0";
+                const studentRemark = remarks.find(r => r.studentId === student.id && Number(r.term) === dynamicTerm);
+
+                return {
+                    student,
+                    scores,
+                    totalScore,
+                    average,
+                    remark: studentRemark ? studentRemark.remark : 'N/A'
+                };
+            }));
+
+            // Sort by total score
+            data.sort((a, b) => b.totalScore - a.totalScore);
+            setReportData(data);
+            setLoading(false);
+        };
+
+        if (selectedClass) {
+            loadReportData();
+        }
+    }, [selectedClass]);
 
 
 

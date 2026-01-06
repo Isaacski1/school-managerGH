@@ -63,42 +63,43 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
                 </div>
             </div>
 
-            {/* Academic Performance */}
-            <div className="mb-2">
-                <h3 className="text-lg font-bold text-red-900 mb-2 border-l-4 border-red-800 pl-3">Academic Performance</h3>
-                <table className="w-full text-left border-collapse" style={{fontSize: '10px'}}>
-                    <thead className="bg-red-800 text-white">
-                        <tr>
-                            <th className="p-2 border">Subject</th>
-                            <th className="p-2 border text-center">Class Test</th>
-                            <th className="p-2 border text-center">Homework</th>
-                            <th className="p-2 border text-center">Project</th>
-                            <th className="p-2 border text-center">Exam</th>
-                            <th className="p-2 border text-center">Total</th>
-                            <th className="p-2 border text-center">Grade</th>
-                            <th className="p-2 border">Remark</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {performance.map((p: any, i: number) => {
-                            const grade = calculateGrade(p.total);
-                            return (
-                                <tr key={i} className="hover:bg-slate-50">
-                                    <td className="p-2 border font-semibold">{p.subject}</td>
-                                    <td className="p-2 border text-center">{p.testScore}</td>
-                                    <td className="p-2 border text-center">{p.homeworkScore}</td>
-                                    <td className="p-2 border text-center">{p.projectScore}</td>
-                                    <td className="p-2 border text-center">{p.examScore}</td>
-                                    <td className="p-2 border text-center font-bold">{p.total}</td>
-                                    <td className={`p-2 border text-center font-bold ${getGradeColor(grade.grade).split(' ')[0]}`}>{grade.grade}</td>
-                                    <td className="p-2 border">{grade.remark}</td>
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                </table>
-            </div>
-
+                        {/* Academic Performance */}
+                        <div className="mb-2">
+                            <h3 className="text-lg font-bold text-red-900 mb-2 border-l-4 border-red-800 pl-3">Academic Performance</h3>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-red-800 text-white">
+                                        <tr>
+                                            <th className="p-2 border text-sm">Subject</th>
+                                            <th className="p-2 border text-center text-sm">Class Test</th>
+                                            <th className="p-2 border text-center text-sm">Homework</th>
+                                            <th className="p-2 border text-center text-sm">Project</th>
+                                            <th className="p-2 border text-center text-sm">Exam</th>
+                                            <th className="p-2 border text-center text-sm">Total</th>
+                                            <th className="p-2 border text-center text-sm">Grade</th>
+                                            <th className="p-2 border text-sm">Remark</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {performance.map((p: any, i: number) => {
+                                            const grade = calculateGrade(p.total);
+                                            return (
+                                                <tr key={i} className="hover:bg-slate-50">
+                                                    <td className="p-2 border font-semibold">{p.subject}</td>
+                                                    <td className="p-2 border text-center">{p.testScore}</td>
+                                                    <td className="p-2 border text-center">{p.homeworkScore}</td>
+                                                    <td className="p-2 border text-center">{p.projectScore}</td>
+                                                    <td className="p-2 border text-center">{p.examScore}</td>
+                                                    <td className="p-2 border text-center font-bold">{p.total}</td>
+                                                    <td className={`p-2 border text-center font-bold ${getGradeColor(grade.grade).split(' ')[0]}`}>{grade.grade}</td>
+                                                    <td className="p-2 border">{grade.remark}</td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
             {/* Summary & Skills */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-4">
                 <div>

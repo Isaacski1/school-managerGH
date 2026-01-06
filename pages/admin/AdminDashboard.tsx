@@ -27,7 +27,7 @@ import {
   AlertOctagon
 } from 'lucide-react';
 import { Notice, Student, TeacherAttendanceRecord } from '../../types';
-import { CLASSES_LIST, calculateGrade, getGradeColor, CURRENT_TERM, ACADEMIC_YEAR } from '../../constants';
+import { CLASSES_LIST, calculateGrade, getGradeColor, CURRENT_TERM, ACADEMIC_YEAR, calculateTotalScore } from '../../constants';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -99,7 +99,8 @@ const AdminDashboard = () => {
         const config = await db.getSchoolConfig();
 
         // Teacher Attendance for today and term statistics
-        const today = new Date().toISOString().split('T')[0];
+        const localToday = new Date();
+        const today = `${localToday.getFullYear()}-${String(localToday.getMonth() + 1).padStart(2, '0')}-${String(localToday.getDate()).padStart(2, '0')}`;
         const teachers = await db.getUsers();
 
         // Get today's attendance
@@ -111,12 +112,12 @@ const AdminDashboard = () => {
         // Check for missed attendance on the previous school day (weekday)
         const missedAlerts: any[] = [];
 
-        // Only check if school has reopened
+        // Only check if school has reopened and there are attendance records in the database
         const currentDate = new Date();
         const reopenDateObj = config.schoolReopenDate ? new Date(config.schoolReopenDate) : null;
         const schoolHasReopened = !reopenDateObj || currentDate >= reopenDateObj;
 
-        if (schoolHasReopened) {
+        if (schoolHasReopened && allTeacherRecords.length > 0) {
             // Find the most recent weekday before today
             const today = new Date();
             const previousWeekday = new Date(today);
@@ -128,7 +129,7 @@ const AdminDashboard = () => {
                 dayOfWeek = previousWeekday.getDay();
             } while (dayOfWeek === 0 || dayOfWeek === 6); // Skip Sunday (0) and Saturday (6)
 
-            const previousSchoolDay = previousWeekday.toISOString().split('T')[0];
+            const previousSchoolDay = `${previousWeekday.getFullYear()}-${String(previousWeekday.getMonth() + 1).padStart(2, '0')}-${String(previousWeekday.getDate()).padStart(2, '0')}`;
 
             // Only check if the previous school day is on or after the reopen date
             if (previousSchoolDay >= (config.schoolReopenDate || previousSchoolDay)) {
@@ -148,11 +149,11 @@ const AdminDashboard = () => {
             }
         }
 
-        // Calculate term statistics for each teacher
+        // Calculate term statistics for each teacher (only from school reopen date)
         const teacherTermStats = teachers
             .filter(t => t.role === 'TEACHER')
             .map(teacher => {
-                const teacherRecords = allTeacherRecords.filter(r => r.teacherId === teacher.id);
+                const teacherRecords = allTeacherRecords.filter(r => r.teacherId === teacher.id && r.date >= (config.schoolReopenDate || ''));
                 const presentDays = teacherRecords.filter(r => r.status === 'present').length;
                 const totalDays = teacherRecords.length;
                 const attendanceRate = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
@@ -211,7 +212,7 @@ const AdminDashboard = () => {
                     const s = studentMap.get(a.studentId)!;
                     studentScores[a.studentId] = { total: 0, count: 0, name: s.name, classId: s.classId };
                 }
-                const score = a.total || ((a.testScore||0) + (a.homeworkScore||0) + (a.projectScore||0) + (a.examScore||0));
+                const score = a.total ?? calculateTotalScore(a);
                 studentScores[a.studentId].total += score;
                 studentScores[a.studentId].count += 1;
             }
@@ -294,7 +295,7 @@ const AdminDashboard = () => {
                             const studentScores: Record<string, { total: number, count: number }> = {};
                             all.forEach((a: any) => {
                                 if(!studentScores[a.studentId]) studentScores[a.studentId] = { total: 0, count: 0 };
-                                const score = a.total ?? ((a.testScore||0)+(a.homeworkScore||0)+(a.projectScore||0)+(a.examScore||0));
+                                const score = a.total ?? calculateTotalScore(a);
                                 studentScores[a.studentId].total += score;
                                 studentScores[a.studentId].count += 1;
                             });
@@ -331,7 +332,7 @@ const AdminDashboard = () => {
             all.forEach((a: any) => {
                 const classId = a.classId || studentToClass.get(a.studentId) || 'unknown';
                 const subject = a.subject || 'General';
-                const score = a.total ?? ((a.testScore||0)+(a.homeworkScore||0)+(a.projectScore||0)+(a.examScore||0));
+                const score = a.total ?? calculateTotalScore(a);
                 if (!perClassSubject[classId]) perClassSubject[classId] = {};
                 if (!perClassSubject[classId][subject]) perClassSubject[classId][subject] = { total: 0, count: 0 };
                 perClassSubject[classId][subject].total += score;
@@ -464,6 +465,7 @@ const AdminDashboard = () => {
     useEffect(() => {
         const attendanceRef = collection(firestore, 'attendance');
         const assessmentsRef = collection(firestore, 'assessments');
+        const teacherAttendanceRef = collection(firestore, 'teacher_attendance');
         const configRef = doc(firestore, 'settings', 'schoolConfig');
         const unsubAttendance = onSnapshot(attendanceRef, () => {
             // Keep this lightweight — update class attendance and counters
@@ -472,6 +474,9 @@ const AdminDashboard = () => {
         const unsubAssessments = onSnapshot(assessmentsRef, () => {
             // Refresh all data when assessments change to update performance stats
             fetchData().catch(e => console.error('Error refreshing data on assessments change', e));
+        });
+        const unsubTeacherAttendance = onSnapshot(teacherAttendanceRef, () => {
+            fetchData().catch(e => console.error('Error refreshing data on teacher attendance change', e));
         });
         const unsubConfig = onSnapshot(configRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -487,6 +492,7 @@ const AdminDashboard = () => {
             unsubAttendance();
             unsubAssessments();
             unsubConfig();
+            unsubTeacherAttendance();
         };
     }, []);
 
@@ -1042,8 +1048,8 @@ const AdminDashboard = () => {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Grade Distribution Chart (Enhanced) */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-md border border-slate-100">
-                <div className="flex justify-between items-center mb-6">
+            <div className="lg:col-span-2 bg-white p-4 sm:p-6 rounded-2xl shadow-md border border-slate-100 overflow-x-auto">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3 sm:gap-0">
                     <div className="flex items-center gap-4">
                         <div className="p-3 bg-red-50 rounded-xl">
                             <BarChart2 className="w-6 h-6 text-red-700"/>
@@ -1052,11 +1058,21 @@ const AdminDashboard = () => {
                             <h3 className="font-bold text-slate-800">Academic Performance Rate</h3>
                             <p className="text-xs text-slate-500">{schoolConfig.currentTerm}</p>
                         </div>
-                        <div className="ml-6 hidden sm:block">
+                        <div className="grid grid-cols-2 sm:flex sm:ml-6 gap-4 sm:gap-6 sm:hidden">
+                            <div>
+                                <p className="text-xs text-slate-500 uppercase">Graded Students</p>
+                                <p className="text-lg sm:text-2xl font-bold text-slate-800">{totalGrades}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-slate-500 uppercase">Average Grade</p>
+                                <p className="text-lg sm:text-2xl font-bold text-amber-500">{avgLetter} <span className="text-xs sm:text-sm text-slate-500">({avgScore.toFixed(2)})</span></p>
+                            </div>
+                        </div>
+                        <div className="hidden sm:block ml-6">
                             <p className="text-xs text-slate-500 uppercase">Graded Students</p>
                             <p className="text-2xl font-bold text-slate-800">{totalGrades}</p>
                         </div>
-                        <div className="ml-6 hidden sm:block">
+                        <div className="hidden sm:block ml-6">
                             <p className="text-xs text-slate-500 uppercase">Average Grade</p>
                             <p className="text-2xl font-bold text-amber-500">{avgLetter} <span className="text-sm text-slate-500">({avgScore.toFixed(2)})</span></p>
                         </div>
@@ -1787,7 +1803,7 @@ const AdminDashboard = () => {
                       <h3 className="font-bold text-slate-800 mb-4 flex items-center">
                           <BookOpen size={20} className="mr-2 text-red-800"/> Academic Performance ({schoolConfig.currentTerm})
                       </h3>
-                      <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="border border-slate-200 rounded-lg overflow-x-auto">
                           <table className="w-full text-sm text-left">
                               <thead className="bg-slate-100 text-slate-600 font-semibold">
                                   <tr>
@@ -1799,7 +1815,7 @@ const AdminDashboard = () => {
                               </thead>
                               <tbody className="divide-y divide-slate-100">
                                   {performanceData ? performanceData.grades.map((g: any, i: number) => {
-                                      const score = g.total || ((g.testScore||0) + (g.homeworkScore||0) + (g.projectScore||0) + (g.examScore||0));
+                                      const score = g.total ?? calculateTotalScore(g);
                                       const { grade, remark } = calculateGrade(score);
                                       return (
                                           <tr key={i} className="hover:bg-slate-50">

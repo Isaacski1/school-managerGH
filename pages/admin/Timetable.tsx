@@ -3,7 +3,7 @@ import Layout from '../../components/Layout';
 import { CLASSES_LIST } from '../../constants';
 import { db } from '../../services/mockDb';
 import { TimeSlot, ClassTimetable } from '../../types';
-import { Save, Plus, Trash2, Clock, Coffee, Sparkles, DoorOpen } from 'lucide-react';
+import { Save, Plus, Trash2, Clock, Coffee, Sparkles, DoorOpen, Users } from 'lucide-react';
 import { showToast } from '../../services/toast';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -23,31 +23,56 @@ const Timetable = () => {
         type: 'lesson'
     });
 
-    // Fetch Subjects and Current Timetable
     useEffect(() => {
-        const loadInitialData = async () => {
-            const subs = await db.getSubjects();
-            setSubjects(subs);
-            if (subs.length > 0) setNewSlot(prev => ({ ...prev, subject: subs[0] }));
-        };
-        loadInitialData();
-    }, []);
-
-    useEffect(() => {
-        const fetchTimetable = async () => {
+        const loadDataForClass = async () => {
             setLoading(true);
-            const data = await db.getTimetable(selectedClass);
+
+            // 1. Fetch subjects from system settings for selected class
+            const currentSubjects = await db.getSubjects(selectedClass);
             
-            // Initialize empty structure if none exists
+            setSubjects(currentSubjects);
+            if (currentSubjects.length > 0) {
+                setNewSlot(prev => ({ ...prev, subject: currentSubjects[0], type: 'lesson' }));
+            } else {
+                setNewSlot(prev => ({ ...prev, subject: '', type: 'lesson' }));
+            }
+
+            // 2. Fetch timetable
+            const data = await db.getTimetable(selectedClass);
+
             const schedule = data?.schedule || {};
             DAYS.forEach(day => {
                 if (!schedule[day]) schedule[day] = [];
             });
-            
+
+            // Reset subjects in existing timetable slots to match system settings
+            let hasChanges = false;
+            if (currentSubjects.length > 0) {
+                Object.keys(schedule).forEach(day => {
+                    schedule[day].forEach((slot: TimeSlot) => {
+                        if (slot.type === 'lesson' && !currentSubjects.includes(slot.subject)) {
+                            slot.subject = currentSubjects[0];
+                            hasChanges = true;
+                        }
+                    });
+                });
+            }
+
+            // If changes were made, save the updated timetable
+            if (hasChanges) {
+                const updatedData: ClassTimetable = {
+                    classId: selectedClass,
+                    schedule: schedule
+                };
+                await db.saveTimetable(updatedData);
+                showToast('Timetable subjects updated to match system settings!', { type: 'success' });
+            }
+
             setTimetable(schedule);
             setLoading(false);
         };
-        fetchTimetable();
+        
+        loadDataForClass();
     }, [selectedClass]);
 
     const handleAddSlot = () => {
@@ -62,7 +87,7 @@ const Timetable = () => {
             startTime: newSlot.startTime,
             endTime: newSlot.endTime,
             subject: newSlot.subject,
-            type: newSlot.type as 'lesson' | 'break' | 'worship' | 'closing'
+            type: newSlot.type as 'lesson' | 'break' | 'worship' | 'closing' | 'assembly' | 'arrival'
         };
 
         const updatedSchedule = { ...timetable };
@@ -100,6 +125,8 @@ const Timetable = () => {
         switch(type) {
             case 'break': return { bg: 'bg-amber-50', border: 'border-amber-100', icon: Coffee, iconColor: 'text-amber-600', badge: 'text-amber-600 border-amber-200' };
             case 'worship': return { bg: 'bg-purple-50', border: 'border-purple-100', icon: Sparkles, iconColor: 'text-purple-600', badge: 'text-purple-600 border-purple-200' };
+            case 'assembly': return { bg: 'bg-blue-50', border: 'border-blue-100', icon: Users, iconColor: 'text-blue-600', badge: 'text-blue-600 border-blue-200' };
+            case 'arrival': return { bg: 'bg-green-50', border: 'border-green-100', icon: Users, iconColor: 'text-green-600', badge: 'text-green-600 border-green-200' };
             case 'closing': return { bg: 'bg-slate-100', border: 'border-slate-200', icon: DoorOpen, iconColor: 'text-slate-600', badge: 'text-slate-600 border-slate-300' };
             default: return { bg: 'bg-white', border: 'border-slate-100', icon: Clock, iconColor: 'text-emerald-600', badge: 'text-slate-600 border-slate-200' };
         }
@@ -137,7 +164,7 @@ const Timetable = () => {
                 <div className="flex flex-1 overflow-hidden">
                     
                     {/* Days Sidebar (Tabs) */}
-                    <div className="w-40 border-r border-slate-100 bg-white flex flex-col overflow-y-auto">
+                    <div className="hidden md:flex w-40 border-r border-slate-100 bg-white flex flex-col overflow-y-auto">
                         {DAYS.map(day => {
                              const count = timetable[day]?.length || 0;
                              return (
@@ -155,8 +182,24 @@ const Timetable = () => {
 
                     {/* Editor Area */}
                     <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/50">
+                        {/* Mobile Day Tabs */}
+                        <div className="md:hidden flex overflow-x-auto bg-white border-b border-slate-100">
+                            {DAYS.map(day => {
+                                const count = timetable[day]?.length || 0;
+                                return (
+                                    <button
+                                        key={day}
+                                        onClick={() => setActiveDay(day)}
+                                        className={`px-4 py-3 text-sm whitespace-nowrap transition-colors hover:bg-slate-50 ${activeDay === day ? 'border-b-2 border-emerald-500 bg-emerald-50 text-emerald-800 font-medium' : 'border-transparent text-slate-600'}`}
+                                    >
+                                        <span>{day}</span>
+                                        <span className="text-xs text-slate-400 ml-1">({count})</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                         {/* Day Header */}
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
+                        <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-center bg-white">
                             <div>
                                 <h2 className="text-xl font-bold text-slate-800">{activeDay} Schedule</h2>
                                 <p className="text-sm text-slate-500">Closing Time: <span className="font-semibold text-slate-800">{getClosingTime(activeDay)}</span></p>
@@ -164,7 +207,7 @@ const Timetable = () => {
                         </div>
 
                         {/* Slots List */}
-                        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
                             {timetable[activeDay]?.length === 0 ? (
                                 <div className="text-center py-10 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
                                     No classes or breaks scheduled for {activeDay}.
@@ -224,19 +267,23 @@ const Timetable = () => {
                                         className="w-full border p-2 rounded text-sm"
                                         value={newSlot.type}
                                         onChange={e => {
-                                            const type = e.target.value as 'lesson'|'break'|'worship'|'closing';
+                                            const type = e.target.value as 'lesson'|'break'|'worship'|'closing'|'assembly'|'arrival';
                                             let subject = '';
                                             if (type === 'break') subject = 'Break';
                                             else if (type === 'worship') subject = 'Worship';
                                             else if (type === 'closing') subject = 'Closing';
+                                            else if (type === 'assembly') subject = 'Assembly';
+                                            else if (type === 'arrival') subject = 'Arrival & Free Play';
                                             else subject = subjects[0] || '';
                                             
                                             setNewSlot({...newSlot, type, subject})
                                         }}
                                      >
+                                         <option value="arrival">Arrival & Free Play</option>
                                          <option value="lesson">Lesson</option>
                                          <option value="break">Break</option>
                                          <option value="worship">Worship</option>
+                                         <option value="assembly">Assembly</option>
                                          <option value="closing">Closing</option>
                                      </select>
                                 </div>

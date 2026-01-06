@@ -1,4 +1,4 @@
-import { ComputedGrade } from "./types";
+import { ComputedGrade, Assessment } from "./types";
 
 export const ACADEMIC_YEAR = "2023-2024";
 export const CURRENT_TERM = 1;
@@ -30,12 +30,64 @@ export const DEFAULT_SUBJECTS = [
   "Creative Arts"
 ];
 
+export const nurserySubjects = [
+    "Language & Literacy",
+    "Numeracy",
+    "Environmental Studies",
+    "Creative Arts",
+    "Physical Development",
+    "Social & Emotional Development",
+    "Rhymes, Songs & Storytelling"
+];
+
+export const kgSubjects = [
+    "Literacy & Language",
+    "Numeracy",
+    "OWOP",
+    "Creative Art",
+    "Physical Education"
+];
+
+export const primarySubjects = [
+    "English Language",
+    "Mathematics",
+    "Science",
+    "ICT",
+    "Religious & Moral Education (RME)",
+    "Ghanaian Language",
+    "Our World Our People (OWOP)",
+    "Creative Arts",
+    "Physical Education"
+];
+
+export const jhsSubjects = [
+    "English Language",
+    "Mathematics",
+    "Integrated Science",
+    "Social Studies",
+    "Religious & Moral Education (RME)",
+    "ICT",
+    "French",
+    "Ghanaian Language",
+    "Creative Arts & Design",
+    "Physical Education",
+    "Career Technology",
+    "Computing / Coding"
+];
+
 export const calculateGrade = (total: number): ComputedGrade => {
   if (total >= 80) return { total, grade: 'A', remark: 'Excellent' };
   if (total >= 70) return { total, grade: 'B', remark: 'Very Good' };
   if (total >= 60) return { total, grade: 'C', remark: 'Good' };
   if (total >= 45) return { total, grade: 'D', remark: 'Pass' };
   return { total, grade: 'F', remark: 'Fail' };
+};
+
+export const calculateTotalScore = (a: Partial<Assessment>): number => {
+    // CA (50 Marks) + Exam (100 Marks scaled to 50%) = 100%
+    const ca = (a.testScore || 0) + (a.homeworkScore || 0) + (a.projectScore || 0);
+    const examScaled = (a.examScore || 0) * 0.5; 
+    return Math.round(ca + examScaled);
 };
 
 export const getGradeColor = (grade: string) => {

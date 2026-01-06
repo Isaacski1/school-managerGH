@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 import { showToast } from '../../services/toast';
 import { db } from '../../services/mockDb';
-import { Notice } from '../../types';
+import { Notice, ClassRoom } from '../../types';
+import { CLASSES_LIST, nurserySubjects, kgSubjects, primarySubjects, jhsSubjects } from '../../constants';
 import { Plus, Trash2, Megaphone, Book, Edit, Check, X, Save, Calendar, AlertTriangle } from 'lucide-react';
 import { collection, getDocs, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { firestore } from '../../services/firebase';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const SystemSettings = () => {
   // Notices State
@@ -15,9 +17,10 @@ const SystemSettings = () => {
   const [noticeType, setNoticeType] = useState<'info'|'urgent'>('info');
   const [isAddingNotice, setIsAddingNotice] = useState(false);
 
-  // Subjects State
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [newSubject, setNewSubject] = useState('');
+  // Class Subjects State
+  const [selectedClassId, setSelectedClassId] = useState<string>(CLASSES_LIST[0]?.id || '');
+  const [currentClassSubjects, setCurrentClassSubjects] = useState<string[]>([]);
+  const [newSubjectName, setNewSubjectName] = useState('');
   const [editingSubject, setEditingSubject] = useState<{original: string, current: string} | null>(null);
 
   // Config State
@@ -25,7 +28,8 @@ const SystemSettings = () => {
       schoolName: '',
       academicYear: '',
       currentTerm: '',
-      schoolReopenDate: ''
+      schoolReopenDate: '',
+      logoUrl: ''
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
@@ -34,7 +38,10 @@ const SystemSettings = () => {
   const [resetting, setResetting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showDeleteSubjectModal, setShowDeleteSubjectModal] = useState(false);
-  const [subjectToDelete, setSubjectToDelete] = useState<string | null>(null);
+  const [subjectToDeleteName, setSubjectToDeleteName] = useState<string | null>(null);
+
+  // Logo Upload State
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const fetchNotices = async () => {
     const data = await db.getNotices();
@@ -42,20 +49,25 @@ const SystemSettings = () => {
   };
 
   const fetchSubjects = async () => {
-    const data = await db.getSubjects();
-    setSubjects(data);
+    if (selectedClassId) {
+      const data = await db.getSubjects(selectedClassId);
+      setCurrentClassSubjects(data);
+    }
   };
 
   const fetchConfig = async () => {
       const data = await db.getSchoolConfig();
-      setConfig(data);
+      setConfig(prev => ({ ...prev, ...data }));
   };
 
   useEffect(() => {
     fetchNotices();
-    fetchSubjects();
     fetchConfig();
   }, []);
+
+  useEffect(() => {
+    fetchSubjects();
+  }, [selectedClassId]);
 
   // --- Config Handlers ---
   const handleSaveConfig = async () => {
@@ -63,6 +75,28 @@ const SystemSettings = () => {
       await db.updateSchoolConfig(config);
       setSavingConfig(false);
       showToast('Configuration saved successfully!', { type: 'success' });
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setUploadingLogo(true);
+      try {
+          const storage = getStorage();
+          const storageRef = ref(storage, `logos/${Date.now()}_${file.name}`);
+          await uploadBytes(storageRef, file);
+          const downloadURL = await getDownloadURL(storageRef);
+          const updatedConfig = { ...config, logoUrl: downloadURL };
+          setConfig(updatedConfig);
+          await db.updateSchoolConfig(updatedConfig);
+          showToast('Logo uploaded successfully!', { type: 'success' });
+      } catch (error) {
+          console.error('Logo upload error:', error);
+          showToast('Failed to upload logo. Please try again.', { type: 'error' });
+      } finally {
+          setUploadingLogo(false);
+      }
   };
 
   // --- Notices Handlers ---
@@ -104,29 +138,30 @@ const SystemSettings = () => {
   // --- Subjects Handlers ---
   const handleAddSubject = async (e: React.FormEvent) => {
       e.preventDefault();
-      if(!newSubject.trim()) return;
-      await db.addSubject(newSubject.trim());
-      setNewSubject('');
+      if(!newSubjectName.trim() || !selectedClassId) return;
+      await db.addSubject(selectedClassId, newSubjectName.trim());
+      setNewSubjectName('');
       fetchSubjects();
+      showToast('Subject added successfully!', { type: 'success' });
   };
 
   const handleDeleteSubject = (name: string) => {
-      setSubjectToDelete(name);
+      setSubjectToDeleteName(name);
       setShowDeleteSubjectModal(true);
   };
 
   const confirmDeleteSubject = async () => {
-      if (!subjectToDelete) return;
+      if (!subjectToDeleteName || !selectedClassId) return;
       setShowDeleteSubjectModal(false);
       try {
-          await db.deleteSubject(subjectToDelete);
+          await db.deleteSubject(selectedClassId, subjectToDeleteName);
           fetchSubjects();
-          showToast(`Subject "${subjectToDelete}" deleted successfully!`, { type: 'success' });
+          showToast(`Subject "${subjectToDeleteName}" deleted successfully!`, { type: 'success' });
       } catch (error) {
           console.error('Error deleting subject:', error);
           showToast('Failed to delete subject. Please try again.', { type: 'error' });
       } finally {
-          setSubjectToDelete(null);
+          setSubjectToDeleteName(null);
       }
   };
 
@@ -135,10 +170,11 @@ const SystemSettings = () => {
   };
 
   const saveEditSubject = async () => {
-      if(!editingSubject || !editingSubject.current.trim()) return;
-      await db.updateSubject(editingSubject.original, editingSubject.current.trim());
+      if(!editingSubject || !editingSubject.current.trim() || !selectedClassId) return;
+      await db.updateSubject(selectedClassId, editingSubject.original, editingSubject.current.trim());
       setEditingSubject(null);
       fetchSubjects();
+      showToast('Subject updated successfully!', { type: 'success' });
   };
 
   // --- Danger Zone Handler ---
@@ -282,17 +318,30 @@ const SystemSettings = () => {
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
                 <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center">
                     <Book className="mr-2 text-blue-600" size={24} /> 
-                    Manage Subjects
+                    Manage Class Subjects
                 </h2>
                 
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Select Class</label>
+                  <select
+                      value={selectedClassId}
+                      onChange={(e) => setSelectedClassId(e.target.value)}
+                      className="w-full border border-slate-300 p-2 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                      {CLASSES_LIST.map((cls: ClassRoom) => (
+                          <option key={cls.id} value={cls.id}>{cls.name}</option>
+                      ))}
+                  </select>
+                </div>
+
                 <form onSubmit={handleAddSubject} className="flex gap-2 mb-6">
                     <input 
                         type="text" 
                         required
                         className="flex-1 border border-slate-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
                         placeholder="New subject name..."
-                        value={newSubject}
-                        onChange={e => setNewSubject(e.target.value)}
+                        value={newSubjectName}
+                        onChange={e => setNewSubjectName(e.target.value)}
                     />
                     <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
                         <Plus size={20} />
@@ -300,35 +349,39 @@ const SystemSettings = () => {
                 </form>
 
                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                    {subjects.map(subject => (
-                        <div key={subject} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100 group">
-                            {editingSubject?.original === subject ? (
-                                <div className="flex items-center flex-1 gap-2">
-                                    <input 
-                                        type="text" 
-                                        className="flex-1 border border-slate-300 p-1 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                        value={editingSubject.current}
-                                        onChange={e => setEditingSubject({...editingSubject, current: e.target.value})}
-                                        autoFocus
-                                    />
-                                    <button onClick={saveEditSubject} className="text-emerald-600 hover:bg-emerald-50 p-1 rounded"><Check size={16}/></button>
-                                    <button onClick={() => setEditingSubject(null)} className="text-red-500 hover:bg-red-50 p-1 rounded"><X size={16}/></button>
-                                </div>
-                            ) : (
-                                <>
-                                    <span className="text-sm font-medium text-slate-700">{subject}</span>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => startEditSubject(subject)} className="text-slate-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-md transition-colors">
-                                            <Edit size={14} />
-                                        </button>
-                                        <button onClick={() => handleDeleteSubject(subject)} className="text-slate-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-md transition-colors">
-                                            <Trash2 size={14} />
-                                        </button>
+                    {currentClassSubjects.length === 0 ? (
+                        <p className="text-sm text-slate-500 text-center italic">No subjects configured for this class. Add some above!</p>
+                    ) : (
+                        currentClassSubjects.map(subject => (
+                            <div key={subject} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100 group">
+                                {editingSubject?.original === subject ? (
+                                    <div className="flex items-center flex-1 gap-2">
+                                        <input 
+                                            type="text" 
+                                            className="flex-1 border border-slate-300 p-1 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                            value={editingSubject.current}
+                                            onChange={e => setEditingSubject({...editingSubject, current: e.target.value})}
+                                            autoFocus
+                                        />
+                                        <button onClick={saveEditSubject} className="text-emerald-600 hover:bg-emerald-50 p-1 rounded"><Check size={16}/></button>
+                                        <button onClick={() => setEditingSubject(null)} className="text-red-500 hover:bg-red-50 p-1 rounded"><X size={16}/></button>
                                     </div>
-                                </>
-                            )}
-                        </div>
-                    ))}
+                                ) : (
+                                    <>
+                                        <span className="text-sm font-medium text-slate-700">{subject}</span>
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => startEditSubject(subject)} className="text-slate-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-md transition-colors">
+                                                <Edit size={14} />
+                                            </button>
+                                            <button onClick={() => handleDeleteSubject(subject)} className="text-slate-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-md transition-colors">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
 
@@ -493,7 +546,7 @@ const SystemSettings = () => {
       )}
 
       {/* Delete Subject Confirmation Modal */}
-      {showDeleteSubjectModal && subjectToDelete && (
+      {showDeleteSubjectModal && subjectToDeleteName && (
         <div className="fixed inset-0 bg-slate-900 bg-opacity-30 flex items-center justify-center z-50 transition-opacity duration-300">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4 transform transition-all duration-300 scale-100">
             <div className="flex items-center mb-4">
@@ -501,13 +554,13 @@ const SystemSettings = () => {
               <h2 className="text-xl font-bold text-slate-800">Delete Subject</h2>
             </div>
             <p className="text-slate-600 mb-6">
-              Are you sure you want to delete the subject "<strong>{subjectToDelete}</strong>"? This might hide scores associated with this subject and cannot be undone.
+              Are you sure you want to delete the subject "<strong>{subjectToDeleteName}</strong>"? This might hide scores associated with this subject and cannot be undone.
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => {
                   setShowDeleteSubjectModal(false);
-                  setSubjectToDelete(null);
+                  setSubjectToDeleteName(null);
                 }}
                 className="px-4 py-2 text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
               >

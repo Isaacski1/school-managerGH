@@ -1,9 +1,11 @@
+import schoolLogo from '../logo/school_logo.jpg';
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/mockDb';
 import { UserRole, SystemNotification } from '../types';
 import Toast from './Toast';
+
 import {
   LogOut,
   Menu,
@@ -31,6 +33,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const [schoolName, setSchoolName] = useState('Noble Care');
+  const [logoUrl, setLogoUrl] = useState(schoolLogo);
 
   // Notification State
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
@@ -45,6 +48,9 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             const config = await db.getSchoolConfig();
             if (config && config.schoolName) {
                 setSchoolName(config.schoolName);
+            }
+            if (config?.logoUrl) {
+                setLogoUrl(config.logoUrl);
             }
         } catch (e) {
             console.error("Failed to load school config", e);
@@ -136,7 +142,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
           
           <div className="w-20 h-20 mb-3 bg-white rounded-full p-1 shadow-lg border-2 border-amber-500">
             <img 
-               src="https://scontent.facc5-1.fna.fbcdn.net/v/t39.30808-6/277561581_380661664069143_4955839060397865014_n.jpg?_nc_cat=102&ccb=1-7&_nc_sid=6ee11a&_nc_eui2=AeFJNGCSI96CBW1S8R2sOotMrM2NNo5aPtOszY02jlo-04y0fL8D99GjvJaBXuzqH8OYrZRdn_DgSU4Kgwvj36D2&_nc_ohc=GeYOZj7SI8AQ7kNvwFo1QMy&_nc_oc=AdnCfyquuglPpsQYtG1zbC9KAOmrLOH7MKUJTuoVKPm7FdxXjqnrHmzUSj4b3hioGUo&_nc_zt=23&_nc_ht=scontent.facc5-1.fna&_nc_gid=DdsLMQJFSMTnkkiquIQTNQ&oh=00_Afo5zCyNS0kVyQ6p_ArT53WNpaTgIKDpPQScqRwUn3HyKA&oe=695CE41D" 
+               src={logoUrl} 
                alt="Noble Care Academy" 
                className="w-full h-full object-contain rounded-full"
                onError={(e) => {

@@ -2,15 +2,60 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../components/Layout';
 import { useAuth } from '../../context/AuthContext';
-import { CLASSES_LIST, CURRENT_TERM, ACADEMIC_YEAR } from '../../constants';
+import { CLASSES_LIST, CURRENT_TERM, ACADEMIC_YEAR, calculateTotalScore } from '../../constants';
 import { db } from '../../services/mockDb';
-import { Notice, TimeSlot, ClassTimetable, TeacherAttendanceRecord, Student, StudentRemark, StudentSkills } from '../../types';
+import { Notice, TimeSlot, ClassTimetable, TeacherAttendanceRecord, Student, StudentRemark, StudentSkills, Assessment } from '../../types';
 import { showToast } from '../../services/toast';
 import TeacherAttendance from './TeacherAttendance';
 import { ClipboardCheck, BookOpen, Clock, TrendingUp, Bell, ChevronDown, X } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const SKILLS_LIST = ['punctuality', 'neatness', 'conduct', 'attitudeToWork', 'classParticipation', 'homeworkCompletion'];
+
+const nurserySubjects = [
+    "Language & Literacy",
+    "Numeracy",
+    "Environmental Studies",
+    "Creative Arts",
+    "Physical Development",
+    "Social & Emotional Development",
+    "Rhymes, Songs & Storytelling"
+];
+
+const kgSubjects = [
+    "Literacy & Language",
+    "Numeracy",
+    "OWOP",
+    "Creative Art",
+    "Physical Education"
+];
+
+const primarySubjects = [
+    "English Language",
+    "Mathematics",
+    "Science",
+    "ICT",
+    "Religious & Moral Education (RME)",
+    "Ghanaian Language",
+    "Our World Our People (OWOP)",
+    "Creative Arts",
+    "Physical Education"
+];
+
+const jhsSubjects = [
+    "English Language",
+    "Mathematics",
+    "Integrated Science",
+    "Social Studies",
+    "Religious & Moral Education (RME)",
+    "ICT",
+    "French",
+    "Ghanaian Language",
+    "Creative Arts & Design",
+    "Physical Education",
+    "Career Technology",
+    "Computing / Coding"
+];
 
 const TeacherDashboard = () => {
   const { user } = useAuth();
@@ -50,7 +95,6 @@ const TeacherDashboard = () => {
   // Teacher Attendance State
   const [teacherAttendance, setTeacherAttendance] = useState<TeacherAttendanceRecord | null>(null);
   const [markingAttendance, setMarkingAttendance] = useState(false);
-  const [showWeeklyAttendance, setShowWeeklyAttendance] = useState(false);
    const [missedAttendanceModal, setMissedAttendanceModal] = useState<{show: boolean, date: string}>({show: false, date: ''});
 
    // Remarks Modal State
@@ -81,6 +125,7 @@ const TeacherDashboard = () => {
 
     // Attendance Trend State
     const [attendanceTrend, setAttendanceTrend] = useState<{ day: string, percentage: number }[]>([]);
+    const [weekOffset, setWeekOffset] = useState(0);
 
     // Class Overview State
     const [totalStudents, setTotalStudents] = useState(0);
@@ -90,8 +135,11 @@ const TeacherDashboard = () => {
     const [behaviorAverage, setBehaviorAverage] = useState('0.0');
     const [subjectStandings, setSubjectStandings] = useState<{subject: string, topStudent: string, average: number}[]>([]);
 
-    const getWeekDates = () => {
+    const getWeekDates = (offset = 0) => {
         const now = new Date();
+        // Go back by N weeks
+        now.setDate(now.getDate() + (offset * 7));
+
         const currentDay = now.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
         const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // Adjust to get Monday
         const monday = new Date(now);
@@ -110,9 +158,23 @@ const TeacherDashboard = () => {
         return dates;
     };
 
+    const getWeekLabel = (offset: number) => {
+        if (offset === 0) return "This Week";
+        const weekDates = getWeekDates(offset);
+        const startDate = new Date(weekDates[0] + 'T00:00:00'); // Add time to avoid timezone issues
+        const endDate = new Date(weekDates[4] + 'T00:00:00');
+        const options = { month: 'short' as const, day: 'numeric' as const };
+        
+        const start = startDate.toLocaleDateString('en-US', options);
+        const end = endDate.toLocaleDateString('en-US', options);
+        
+        if (offset === -1) return `Last Week (${start} - ${end})`;
+        
+        return `${start} - ${end}`;
+    };
+
   // Refresh attendance data when returning from attendance page
   useEffect(() => {
-    if (!showWeeklyAttendance) {
       // Re-check for missed attendance when returning to dashboard
       const checkAttendance = async () => {
         const today = new Date().toISOString().split('T')[0];
@@ -154,8 +216,7 @@ const TeacherDashboard = () => {
       };
 
       if (user) checkAttendance();
-    }
-  }, [showWeeklyAttendance, user]);
+  }, [user]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -169,8 +230,9 @@ const TeacherDashboard = () => {
             config = { currentTerm: `Term ${CURRENT_TERM}`, academicYear: ACADEMIC_YEAR, schoolReopenDate: '' };
         }
 
-        const subjectsData = await db.getSubjects();
-        setSubjects(subjectsData);
+        // Fetch subjects from system settings for the selected class
+        const currentSubjects = await db.getSubjects(selectedClassId);
+        setSubjects(currentSubjects);
 
         // Notices
         const noticeData = await db.getNotices();
@@ -233,7 +295,7 @@ const TeacherDashboard = () => {
                 const totalStudents = students.length || 1; // Prevent division by zero
 
                 // Get dates for the selected week
-                const weekDates = getWeekDates();
+                const weekDates = getWeekDates(weekOffset);
 
                 // Filter records to the selected week's dates
                 const weekRecords = attendanceRecords.filter(record => weekDates.includes(record.date));
@@ -251,23 +313,29 @@ const TeacherDashboard = () => {
                 setAttendanceTrend(trendData);
                 setClassStudents(students);
 
-                // Class Overview Calculations
-                setTotalStudents(students.length);
-                const today = new Date().toISOString().split('T')[0];
-                const todayAttendance = attendanceRecords.find(r => r.date === today);
-                const presentTodayCount = todayAttendance ? todayAttendance.presentStudentIds.length : 0;
-                setPresentToday(presentTodayCount);
-                setAbsentToday(students.length - presentTodayCount);
+                // Class Overview Calculations (only for current week)
+                if (weekOffset === 0) {
+                    setTotalStudents(students.length);
+                    const today = new Date().toISOString().split('T')[0];
+                    const todayAttendance = attendanceRecords.find(r => r.date === today);
+                    const presentTodayCount = todayAttendance ? todayAttendance.presentStudentIds.length : 0;
+                    setPresentToday(presentTodayCount);
+                    setAbsentToday(students.length - presentTodayCount);
+                } else {
+                    // Reset today's stats when viewing past weeks
+                    setPresentToday(0);
+                    setAbsentToday(0);
+                }
 
                 // Class Average
                 const currentTermNum = parseInt((config.currentTerm || `Term ${CURRENT_TERM}`).split(' ')[1]);
                 let totalScore = 0;
                 let totalAssessments = 0;
-                for (const subject of subjectsData) {
+                for (const subject of currentSubjects) { // Use currentSubjects
                     const assessments = await db.getAssessments(selectedClassId, subject);
                     const termAssessments = assessments.filter(a => a.term === currentTermNum);
                     for (const assessment of termAssessments) {
-                        const score = assessment.total || ((assessment.testScore||0) + (assessment.homeworkScore||0) + (assessment.projectScore||0) + (assessment.examScore||0));
+                        const score = assessment.total ?? calculateTotalScore(assessment); // Use ?? and new function
                         totalScore += score;
                         totalAssessments++;
                     }
@@ -292,7 +360,7 @@ const TeacherDashboard = () => {
 
                 // Subject Standings
                 const standings: {subject: string, topStudent: string, average: number}[] = [];
-                for (const subject of subjectsData) {
+                for (const subject of currentSubjects) { // Use currentSubjects
                     const assessments = await db.getAssessments(selectedClassId, subject);
                     const termAssessments = assessments.filter(a => a.term === currentTermNum);
                     if (termAssessments.length === 0) continue;
@@ -300,7 +368,7 @@ const TeacherDashboard = () => {
                     let maxScore = 0;
                     let topStudent = '';
                     for (const assessment of termAssessments) {
-                        const score = assessment.total || ((assessment.testScore||0) + (assessment.homeworkScore||0) + (assessment.projectScore||0) + (assessment.examScore||0));
+                        const score = assessment.total ?? calculateTotalScore(assessment); // Use ?? and new function
                         const student = students.find(s => s.id === assessment.studentId);
                         if (student && score > maxScore) {
                             maxScore = score;
@@ -315,12 +383,12 @@ const TeacherDashboard = () => {
                 setSubjectStandings(standings);
 
             } catch (error) {
-                console.error("Error calculating attendance trend:", error);
+                console.error("Error calculating dashboard stats:", error);
             }
         }
     };
     fetchData();
-    }, [selectedClassId]);
+    }, [selectedClassId, weekOffset]);
 
   // Update displayed schedule when day or data changes
   useEffect(() => {
@@ -366,20 +434,6 @@ const TeacherDashboard = () => {
       setMarkingAttendance(false);
     }
   };
-
-  if (showWeeklyAttendance) {
-    return (
-      <div>
-        <button
-          onClick={() => setShowWeeklyAttendance(false)}
-          className="mb-4 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
-        >
-          ← Back to Dashboard
-        </button>
-        <TeacherAttendance />
-      </div>
-    );
-  }
 
   return (
     <Layout title="Teacher Dashboard">
@@ -447,7 +501,7 @@ const TeacherDashboard = () => {
                     </div>
                 </Link>
 
-                <button onClick={() => setShowWeeklyAttendance(true)} className="group block bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:border-green-500 transition-all relative overflow-hidden w-full text-left">
+                <Link to="/teacher/my-attendance" className="group block bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:border-green-500 transition-all relative overflow-hidden w-full text-left">
                     <div className="absolute right-0 top-0 w-24 h-24 bg-green-50 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
                     <div className="relative z-10">
                         <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-500 transition-colors">
@@ -461,7 +515,7 @@ const TeacherDashboard = () => {
                           </p>
                         )}
                     </div>
-                </button>
+                </Link>
 
                 <button onClick={async () => { 
                     const existingRemarks = await db.getStudentRemarks(selectedClassId);
@@ -538,13 +592,21 @@ const TeacherDashboard = () => {
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                     <h4 className="font-bold text-slate-800 mb-2">Average Performance</h4>
                     <div className="text-center">
-                        <span className="text-2xl font-bold text-blue-600">{classAverage.toFixed(1)}%</span>
+                        {classAverage > 0 ? (
+                            <span className="text-2xl font-bold text-blue-600">{classAverage.toFixed(1)}%</span>
+                        ) : (
+                            <span className="text-sm text-slate-400 italic">No assessment data.</span>
+                        )}
                     </div>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                     <h4 className="font-bold text-slate-800 mb-2">Behavior Average</h4>
                     <div className="text-center">
-                        <span className="text-lg font-semibold text-purple-600">{behaviorAverage}/5</span>
+                        {parseFloat(behaviorAverage) > 0 ? (
+                            <span className="text-lg font-semibold text-purple-600">{behaviorAverage}/5</span>
+                        ) : (
+                            <span className="text-sm text-slate-400 italic">No behavior data.</span>
+                        )}
                     </div>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
@@ -561,40 +623,59 @@ const TeacherDashboard = () => {
             </div>
 
             {/* Attendance Chart Visualization */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-slate-800 flex items-center">
-                        <TrendingUp className="w-5 h-5 mr-2 text-red-700"/> Weekly Attendance Trend
+            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 gap-3 sm:gap-0">
+                    <h3 className="font-bold text-slate-800 flex items-center text-base sm:text-lg">
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-red-700"/> Weekly Attendance Trend
                     </h3>
-                    <div className="flex gap-2">
-                        <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-600 text-white">This Week</span>
+                    <div className="flex gap-2 items-center w-full sm:w-auto justify-center sm:justify-start">
+                        <button
+                            onClick={() => setWeekOffset(weekOffset - 1)}
+                            className="px-3 py-1.5 text-xs font-medium rounded-full bg-slate-100 hover:bg-slate-200 transition-colors min-w-[60px] touch-manipulation"
+                        >
+                            &larr; Prev
+                        </button>
+                        <span className="px-3 py-1.5 text-xs font-medium rounded-full bg-red-600 text-white text-center min-w-[120px] sm:w-36 truncate">
+                            {getWeekLabel(weekOffset)}
+                        </span>
+                        <button
+                            onClick={() => setWeekOffset(weekOffset + 1)}
+                            disabled={weekOffset === 0}
+                            className="px-3 py-1.5 text-xs font-medium rounded-full bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[60px] touch-manipulation"
+                        >
+                            Next &rarr;
+                        </button>
                     </div>
                 </div>
-                <div className="flex items-end justify-between h-40 gap-2 px-2">
+                <div className="flex items-end justify-between h-32 sm:h-40 gap-1 sm:gap-2 px-1 sm:px-2">
                     {attendanceTrend.length === 0 ? (
                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
-                             <TrendingUp className="w-8 h-8 mb-2 opacity-30"/>
-                             <p className="text-sm italic">No attendance records found.</p>
+                             <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 mb-2 opacity-30"/>
+                             <p className="text-xs sm:text-sm italic">No attendance records found.</p>
                          </div>
                     ) : (
                         attendanceTrend.map((data, i) => (
-                            <div key={i} className="flex flex-col items-center flex-1 group">
+                            <div key={i} className="flex flex-col items-center flex-1 group min-w-0">
                                 <div className="relative w-full flex justify-center">
-                                    <div 
-                                        className="w-full max-w-[40px] bg-slate-100 rounded-t-lg transition-all duration-500 group-hover:bg-red-100 relative overflow-hidden"
-                                        style={{ height: '140px' }}
+                                    <div
+                                        className="w-full max-w-[32px] sm:max-w-[40px] bg-slate-100 rounded-t-lg transition-all duration-500 group-hover:bg-red-100 relative overflow-hidden"
+                                        style={{ height: '120px' }}
                                     >
-                                        <div 
+                                        <div
                                             className="absolute bottom-0 left-0 right-0 bg-red-600 rounded-t-lg transition-all duration-1000"
                                             style={{ height: `${data.percentage}%` }}
                                         ></div>
                                     </div>
-                                    {/* Tooltip */}
-                                    <div className="absolute -top-8 bg-slate-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {/* Tooltip - hidden on mobile, shown on larger screens */}
+                                    <div className="hidden sm:block absolute -top-8 bg-slate-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {data.percentage}%
+                                    </div>
+                                    {/* Mobile percentage display */}
+                                    <div className="sm:hidden absolute -top-6 bg-slate-800 text-white text-xs py-0.5 px-1 rounded opacity-0 group-active:opacity-100 transition-opacity">
                                         {data.percentage}%
                                     </div>
                                 </div>
-                                <span className="text-xs text-slate-500 mt-2 font-medium">
+                                <span className="text-xs text-slate-500 mt-2 sm:mt-3 font-medium truncate">
                                     {data.day}
                                 </span>
                             </div>
@@ -713,7 +794,7 @@ const TeacherDashboard = () => {
                 >
                   Remind Me Later
                 </button>
-                <button
+                {/* <button
                   onClick={() => {
                     setMissedAttendanceModal({show: false, date: ''});
                     setShowWeeklyAttendance(true);
@@ -721,7 +802,7 @@ const TeacherDashboard = () => {
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                 >
                   Mark Attendance
-                </button>
+                </button> */}
               </div>
             </div>
           </div>
