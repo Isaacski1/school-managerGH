@@ -49,9 +49,6 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             if (config && config.schoolName) {
                 setSchoolName(config.schoolName);
             }
-            if (config?.logoUrl) {
-                setLogoUrl(config.logoUrl);
-            }
         } catch (e) {
             console.error("Failed to load school config", e);
         }
@@ -140,15 +137,11 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
             <X size={24} />
           </button>
           
-          <div className="w-20 h-20 mb-3 bg-white rounded-full p-1 shadow-lg border-2 border-amber-500">
+          <div className="w-20 h-20 mb-3 bg-white rounded-full p-1 shadow-lg border-2 border-amber-500 overflow-hidden">
             <img 
-               src={logoUrl} 
+               src={schoolLogo} 
                alt="Noble Care Academy" 
                className="w-full h-full object-contain rounded-full"
-               onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full rounded-full bg-red-800 flex items-center justify-center text-amber-400 font-bold text-xs">NCA</div>';
-               }}
             />
           </div>
 
@@ -217,74 +210,74 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
           <div className="flex items-center gap-4">
              {/* Notification Bell - ONLY FOR ADMIN */}
              {isAdmin && (
-               <div className="relative">
-                 <button 
-                    onClick={() => setShowNotifications(!showNotifications)}
-                    className={`relative p-2 transition-colors ${showNotifications ? 'text-red-700 bg-red-50 rounded-full' : 'text-slate-400 hover:text-red-700'}`}
-                 >
-                    <Bell size={20} />
-                    {unreadCount > 0 && (
-                        <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border-2 border-white"></span>
-                    )}
-                 </button>
+                <div className="relative">
+                  <button 
+                     onClick={() => setShowNotifications(!showNotifications)}
+                     className={`relative p-2 transition-colors ${showNotifications ? 'text-red-700 bg-red-50 rounded-full' : 'text-slate-400 hover:text-red-700'}`}
+                  >
+                     <Bell size={20} />
+                     {unreadCount > 0 && (
+                         <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full border-2 border-white"></span>
+                     )}
+                  </button>
 
-                 {/* Dropdown */}
-                 {showNotifications && (
-                    <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)}></div>
-                        <div className="fixed right-4 top-16 w-80 sm:w-96 bg-white bg-opacity-100 rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
-                            <div className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                                <h4 className="font-bold text-slate-800 text-sm">Notifications</h4>
-                                <span className="text-xs text-slate-500">{unreadCount} unread</span>
-                            </div>
-                            <div className="max-h-80 overflow-y-auto bg-white">
-                                {notifications.length === 0 ? (
-                                    <div className="p-8 text-center text-slate-400 text-sm">No new activity.</div>
-                                ) : (
-                                    notifications.map(n => (
-                                        <div key={n.id} className={`p-3 border-b border-slate-100 hover:bg-slate-50 transition-colors ${n.isRead ? 'bg-slate-50' : 'bg-white border-l-4 border-l-red-500'}`}>
-                                            <div className="flex justify-between items-start gap-2">
-                                                <div className="flex-1">
-                                                    <p className={`text-sm leading-snug mb-1 ${n.isRead ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>{n.message}</p>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide ${n.isRead ? 'bg-slate-200 text-slate-500' : 'bg-red-100 text-red-600'}`}>
-                                                            {n.isRead ? 'Read' : 'Unread'}
-                                                        </span>
-                                                        <span className="text-[10px] text-slate-400">
-                                                            {new Date(n.createdAt).toLocaleString()}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                    <div className="flex items-center gap-2">
-                                                      {!n.isRead && (
-                                                        <button onClick={(e) => handleMarkRead(n.id, e)} className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded transition-colors shrink-0" title="Mark as read">
-                                                          <Check size={16} />
-                                                        </button>
-                                                      )}
-                                                      <button onClick={(e) => handleDeleteNotification(n.id, e)} className="text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors shrink-0" title="Delete notification">
-                                                        <X size={16} />
-                                                      </button>
-                                                    </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
-                    </>
-                 )}
-               </div>
-             )}
-             
-             <div className="h-6 w-px bg-slate-200 mx-2 hidden sm:block"></div>
+                  {/* Dropdown */}
+                  {showNotifications && (
+                     <>
+                         <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)}></div>
+                         <div className="fixed right-4 top-16 w-80 sm:w-96 bg-white bg-opacity-100 rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+                             <div className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                 <h4 className="font-bold text-slate-800 text-sm">Notifications</h4>
+                                 <span className="text-xs text-slate-500">{unreadCount} unread</span>
+                             </div>
+                             <div className="max-h-80 overflow-y-auto bg-white">
+                                 {notifications.length === 0 ? (
+                                     <div className="p-8 text-center text-slate-400 text-sm">No new activity.</div>
+                                 ) : (
+                                     notifications.map(n => (
+                                         <div key={n.id} className={`p-3 border-b border-slate-100 hover:bg-slate-50 transition-colors ${n.isRead ? 'bg-slate-50' : 'bg-white border-l-4 border-l-red-500'}`}>
+                                             <div className="flex justify-between items-start gap-2">
+                                                 <div className="flex-1">
+                                                     <p className={`text-sm leading-snug mb-1 ${n.isRead ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>{n.message}</p>
+                                                     <div className="flex items-center gap-2">
+                                                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide ${n.isRead ? 'bg-slate-200 text-slate-500' : 'bg-red-100 text-red-600'}`}>
+                                                             {n.isRead ? 'Read' : 'Unread'}
+                                                         </span>
+                                                         <span className="text-[10px] text-slate-400">
+                                                             {new Date(n.createdAt).toLocaleString()}
+                                                         </span>
+                                                     </div>
+                                                 </div>
+                                                     <div className="flex items-center gap-2">
+                                                       {!n.isRead && (
+                                                         <button onClick={(e) => handleMarkRead(n.id, e)} className="text-emerald-500 hover:text-emerald-700 p-1 hover:bg-emerald-50 rounded transition-colors shrink-0" title="Mark as read">
+                                                           <Check size={16} />
+                                                         </button>
+                                                       )}
+                                                       <button onClick={(e) => handleDeleteNotification(n.id, e)} className="text-slate-400 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors shrink-0" title="Delete notification">
+                                                         <X size={16} />
+                                                       </button>
+                                                     </div>
+                                             </div>
+                                         </div>
+                                     ))
+                                 )}
+                             </div>
+                         </div>
+                     </>
+                  )}
+                </div>
+              )}
+              
+              <div className="h-6 w-px bg-slate-200 mx-2 hidden sm:block"></div>
 
-             <div className="text-sm text-slate-500 hidden sm:block font-medium">
-               {new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-             </div>
+              <div className="text-sm text-slate-500 hidden sm:block font-medium">
+                {new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-8">
+        <main className="flex-1 overflow-auto p-4 md:p-8">
           {children}
         </main>
         <Toast />
