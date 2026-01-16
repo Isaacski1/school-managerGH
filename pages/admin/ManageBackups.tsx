@@ -32,6 +32,7 @@ const ManageBackups = () => {
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [backupToDeleteId, setBackupToDeleteId] = useState<string | null>(null);
     const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+    const [showClearAllModal, setShowClearAllModal] = useState(false);
 
     const fetchBackups = async (filters?: { term?: string; academicYear?: string; date?: string }) => {
         setLoading(true);
@@ -118,6 +119,21 @@ const ManageBackups = () => {
         }
     };
 
+    const handleClearAllBackups = async () => {
+        setShowClearAllModal(false);
+        try {
+            await db.deleteAllBackups();
+            showToast('All backups cleared successfully!', { type: 'success' });
+            setFilterTerm('');
+            setFilterAcademicYear('');
+            setFilterDate('');
+            await fetchBackups();
+        } catch (err: any) {
+            console.error('Error clearing all backups:', err);
+            showToast('Failed to clear all backups.', { type: 'error' });
+        }
+    };
+
     useEffect(() => {
         fetchBackups();
     }, []);
@@ -138,7 +154,7 @@ const ManageBackups = () => {
             <Layout title="Manage Backups">
                 <div className="text-center p-8 bg-red-50 border border-red-200 rounded-lg">
                     <p className="text-red-700">{error}</p>
-                    <button onClick={fetchBackups} className="mt-4 px-4 py-2 bg-red-700 text-white rounded hover:bg-red-800">
+                    <button onClick={() => fetchBackups()} className="mt-4 px-4 py-2 bg-red-700 text-white rounded hover:bg-red-800">
                         <RefreshCcw className="inline-block mr-2" size={16} /> Retry
                     </button>
                 </div>
@@ -207,6 +223,12 @@ const ManageBackups = () => {
                 >
                     Clear Filters
                 </button>
+                <button
+                    onClick={() => setShowClearAllModal(true)}
+                    className="ml-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                    Clear All Backups
+                </button>
             </div>
 
             {/* Backups List */}
@@ -218,8 +240,8 @@ const ManageBackups = () => {
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {backups.map(backup => (
-                            <div key={backup.id} className="flex items-center justify-between p-4 border border-slate-200 rounded-lg">
+                        {backups.map((backup, index) => (
+                            <div key={backup.id || `backup-${index}`} className="flex items-center justify-between p-4 border border-slate-200 rounded-lg">
                                 <div>
                                     <p className="font-semibold text-slate-800">{backup.term} - {backup.academicYear}</p>
                                     <p className="text-sm text-slate-500">Created: {new Date(backup.timestamp).toLocaleString()}</p>
@@ -490,6 +512,28 @@ const ManageBackups = () => {
                   <div className="p-6 border-t border-slate-100 text-right space-x-2">
                     <button onClick={() => setShowDeleteConfirmModal(false)} className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300">Cancel</button>
                     <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Delete</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Clear All Backups Confirmation Modal */}
+            {showClearAllModal && (
+              <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+                <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-red-900">Confirm Clear All Backups</h3>
+                    <button onClick={() => setShowClearAllModal(false)} className="text-slate-400 hover:text-slate-700">
+                      <X size={20}/>
+                    </button>
+                  </div>
+                  <div className="p-6">
+                    <p className="text-slate-700 mb-4">Are you sure you want to delete ALL backups? This action cannot be undone and will permanently remove all backup data.</p>
+                    <p className="text-sm text-red-600 font-semibold">Warning: This will affect {backups.length} backup{backups.length !== 1 ? 's' : ''}.</p>
+                  </div>
+                  <div className="p-6 border-t border-slate-100 text-right space-x-2">
+                    <button onClick={() => setShowClearAllModal(false)} className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300">Cancel</button>
+                    <button onClick={handleClearAllBackups} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Clear All</button>
                   </div>
                 </div>
               </div>

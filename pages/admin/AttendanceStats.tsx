@@ -29,19 +29,16 @@ const AttendanceStats = () => {
                 // 2. Get School Config to calculate total school days
                 const config = await db.getSchoolConfig();
                 
-                // 3. Calculate total school days from reopen to vacation (excluding weekends)
+                // 3. Calculate total school days from reopen to vacation (inclusive)
                 let totalSchoolDays = 0;
                 if (config.schoolReopenDate && config.vacationDate) {
                     const reopen = new Date(config.schoolReopenDate);
                     const vacation = new Date(config.vacationDate);
-                    
-                    // Count weekdays (Mon-Fri) between dates
+
+                    // Count all calendar days between dates inclusive
                     const current = new Date(reopen);
                     while (current <= vacation) {
-                        const day = current.getDay();
-                        if (day !== 0 && day !== 6) { // Not Sunday (0) or Saturday (6)
-                            totalSchoolDays++;
-                        }
+                        totalSchoolDays++;
                         current.setDate(current.getDate() + 1);
                     }
                 } else {

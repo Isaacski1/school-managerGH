@@ -77,12 +77,12 @@ const ReportCard = () => {
             const users = await db.getUsers();
 
             // 2. Process Data
-            // Calculate total school days from reopen to vacation (excluding weekends)
+            // Calculate total school days from reopen to vacation (inclusive)
             let totalSchoolDays = 0;
             if (schoolConfig.schoolReopenDate && schoolConfig.vacationDate) {
                 const reopen = new Date(schoolConfig.schoolReopenDate);
                 const vacation = new Date(schoolConfig.vacationDate);
-                
+
                 // Validate dates to prevent infinite loops or incorrect calculations
                 if (isNaN(reopen.getTime()) || isNaN(vacation.getTime())) {
                     console.warn('Invalid school reopen or vacation date in config. Falling back to attendance count.');
@@ -93,12 +93,10 @@ const ReportCard = () => {
                     showToast('Reopen date is after vacation date in settings. Using attendance records count for total days.', { type: 'info' });
                     totalSchoolDays = attendance.length;
                 } else {
+                    // Count all calendar days between dates inclusive
                     const current = new Date(reopen);
                     while (current <= vacation) {
-                        const day = current.getDay();
-                        if (day !== 0 && day !== 6) { // Not Sunday (0) or Saturday (6)
-                            totalSchoolDays++;
-                        }
+                        totalSchoolDays++;
                         current.setDate(current.getDate() + 1);
                     }
                 }

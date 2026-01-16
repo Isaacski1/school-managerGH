@@ -634,6 +634,13 @@ class FirestoreService {
     async deleteBackup(id: string): Promise<void> {
         await deleteDoc(doc(firestore, 'backups', id));
     }
+
+    async deleteAllBackups(): Promise<void> {
+        const q = collection(firestore, 'backups');
+        const snap = await getDocs(q);
+        const deletions = snap.docs.map(d => deleteDoc(doc(firestore, 'backups', d.id)));
+        await Promise.all(deletions);
+    }
 }
 
 export const db = new FirestoreService();

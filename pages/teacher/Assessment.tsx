@@ -60,7 +60,7 @@ const AssessmentPage = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [subjects, setSubjects] = useState<string[]>([]);
   const [selectedSubject, setSelectedSubject] = useState('');
-  const [assessments, setAssessments] = useState<Record<string, Assessment>>({});
+  const [assessments, setAssessments] = useState<Record<string, Partial<Assessment>>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
     // School config (term + academic year) fetched from DB
@@ -185,16 +185,16 @@ const AssessmentPage = () => {
     loadData();
     }, [selectedClassId, selectedSubject, schoolConfig.currentTerm, schoolConfig.academicYear]);
 
-  const handleChange = (studentId: string, field: keyof typeof LIMITS, value: string) => {
+  const handleChange = (studentId: string, field: keyof Assessment, value: string) => {
     let numValue = value === '' ? 0 : parseFloat(value);
-    
+
     // Constraint: Prevent entering values higher than max
-    const maxLimit = LIMITS[field];
+    const maxLimit = LIMITS[field as keyof typeof LIMITS];
     if (numValue > maxLimit) {
         numValue = maxLimit;
     }
     if (numValue < 0) numValue = 0;
-    
+
     setAssessments(prev => {
         const current = prev[studentId] || {};
         return {
@@ -329,7 +329,7 @@ const AssessmentPage = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                     {students.map((student) => {
-                        const data = assessments[student.id] || {};
+                        const data = assessments[student.id] || ({} as Partial<Assessment>);
                         const total = calculateTotalScore(data);
                         const { grade, remark } = calculateGrade(total);
                         const gradeColor = getGradeColor(grade);

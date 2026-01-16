@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Notice, Student, TeacherAttendanceRecord, SchoolConfig } from '../../types';
 import { CLASSES_LIST, calculateGrade, getGradeColor, CURRENT_TERM, ACADEMIC_YEAR, calculateTotalScore } from '../../constants';
+import AttendanceChart from '../../components/dashboard/AttendanceChart';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -46,7 +47,7 @@ const AdminDashboard = () => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Teacher Attendance State
-  const [teacherAttendance, setTeacherAttendance] = useState<TeacherAttendanceRecord[]>([]);
+  const [teacherAttendance, setTeacherAttendance] = useState<any[]>([]);
   const [teacherTermStats, setTeacherTermStats] = useState<any[]>([]);
   const [missedAttendanceAlerts, setMissedAttendanceAlerts] = useState<any[]>([]);
   const [missedStudentAttendanceAlerts, setMissedStudentAttendanceAlerts] = useState<any[]>([]);
@@ -63,14 +64,16 @@ const AdminDashboard = () => {
     const [lastWeekAttendance, setLastWeekAttendance] = useState<number | null>(null);
   
   // Configuration State
-  const [schoolConfig, setSchoolConfig] = useState<SchoolConfig>({
+  const [schoolConfig, setSchoolConfig] = useState<Partial<SchoolConfig>>({
       academicYear: '',
       currentTerm: '',
       schoolReopenDate: '',
       schoolName: '', // Assuming these properties are always present based on SchoolConfig interface
       headTeacherRemark: '',
       termEndDate: '',
-      vacationDate: ''
+      vacationDate: '',
+      nextTermBegins: '',
+      termTransitionProcessed: false
   });
 
   // Attendance Week Navigation (initialized to null, set after config loads)
@@ -114,7 +117,7 @@ const AdminDashboard = () => {
         // Get all teacher attendance records for term statistics
         const allTeacherRecords = await db.getAllTeacherAttendanceRecords();
 
-        // Check for missed attendance on the previous school day (weekday)
+        // Check for missed attendance on recent school days (weekdays)
         const missedAlerts: any[] = [];
 
         // Only check if school has reopened and there are attendance records in the database
@@ -127,94 +130,19 @@ const AdminDashboard = () => {
         currentDate.setHours(0, 0, 0, 0);
         const isOnVacation = vacationDateObj && nextTermBeginsObj && currentDate >= vacationDateObj && currentDate < nextTermBeginsObj;
 
+        const maxDaysBack = 5; // Check up to 5 previous school days for missed attendance
+
         if (schoolHasReopened && !isOnVacation && allTeacherRecords.length > 0) {
-            // Find the most recent weekday before today
-            const today = new Date();
-            const previousWeekday = new Date(today);
-            let dayOfWeek = previousWeekday.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-            const vacationDateObj = config.vacationDate ? new Date(config.vacationDate + 'T00:00:00') : null; // Parse to local date
-            
-            // Parse reopen date as local date to avoid timezone issues
+            // Parse dates
             const parseLocalDate = (dateStr: string): Date | null => {
                 if (!dateStr) return null;
                 let parts: string[] = [];
                 if (dateStr.includes('-')) {
-                    // Format: YYYY-MM-DD
                     parts = dateStr.split('-');
                     if (parts.length === 3) {
                         return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
                     }
                 } else if (dateStr.includes('/')) {
-                    // Format: MM/DD/YYYY
-                    parts = dateStr.split('/');
-                    if (parts.length === 3) {
-                        return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
-                    }
-                }
-                return null;
-            };
-            const reopenDateObjLocal = parseLocalDate(config.schoolReopenDate);
-
-            // Go back one day at a time until we hit a weekday (Mon-Fri) AND not a vacation day
-            do {
-                previousWeekday.setDate(previousWeekday.getDate() - 1);
-                dayOfWeek = previousWeekday.getDay();
-                // Check if it's a vacation day
-                const isVacationDay = vacationDateObj && previousWeekday.toDateString() === vacationDateObj.toDateString();
-
-                // Skip Sunday (0), Saturday (6), and vacation days
-                if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
-                    continue; // Skip this day and go back one more
-                } else {
-                    break; // Found a valid previous school day
-                }
-            } while (true);
-
-            const previousSchoolDay = `${previousWeekday.getFullYear()}-${String(previousWeekday.getMonth() + 1).padStart(2, '0')}-${String(previousWeekday.getDate()).padStart(2, '0')}`;
-
-            // Only check if the previous school day is on or after the reopen date
-            // This ensures we don't show alerts for dates during vacation when school just reopened
-            const previousWeekdayTime = previousWeekday.getTime();
-            const reopenDateTime = reopenDateObjLocal ? reopenDateObjLocal.getTime() : 0;
-            
-            const isDuringVacation = vacationDateObj && nextTermBeginsObj && previousWeekday >= vacationDateObj && previousWeekday < nextTermBeginsObj;
-            if (previousWeekdayTime >= reopenDateTime && reopenDateTime > 0 && !isDuringVacation) {
-                for (const teacher of teachers.filter(t => t.role === 'TEACHER')) {
-                    const attendanceRecord = await db.getTeacherAttendance(teacher.id, previousSchoolDay);
-                    if (!attendanceRecord) {
-                        missedAlerts.push({
-                            teacherId: teacher.id,
-                            teacherName: teacher.name,
-                            date: previousSchoolDay,
-                            classes: teacher.assignedClassIds?.map(id =>
-                                CLASSES_LIST.find(c => c.id === id)?.name
-                            ).join(', ') || 'Not Assigned'
-                        });
-                    }
-                }
-            }
-        }
-
-        // Check for missed STUDENT attendance on the previous school day
-        const missedStudentAlerts: any[] = [];
-        if (schoolHasReopened && !isOnVacation) {
-            const today = new Date();
-            const previousWeekday = new Date(today);
-            let dayOfWeek = previousWeekday.getDay();
-            
-            // Parse reopen date as local date to avoid timezone issues
-            // Handle both "YYYY-MM-DD" and "MM/DD/YYYY" formats
-            const parseLocalDate = (dateStr: string): Date | null => {
-                if (!dateStr) return null;
-                let parts: string[] = [];
-                if (dateStr.includes('-')) {
-                    // Format: YYYY-MM-DD
-                    parts = dateStr.split('-');
-                    if (parts.length === 3) {
-                        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-                    }
-                } else if (dateStr.includes('/')) {
-                    // Format: MM/DD/YYYY
                     parts = dateStr.split('/');
                     if (parts.length === 3) {
                         return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
@@ -224,68 +152,144 @@ const AdminDashboard = () => {
             };
             const reopenDateObjLocal = parseLocalDate(config.schoolReopenDate);
             const vacationDateObjLocal = parseLocalDate(config.vacationDate);
-            
-            do {
-                previousWeekday.setDate(previousWeekday.getDate() - 1);
-                dayOfWeek = previousWeekday.getDay();
-                
-                // Check if the date falls within the vacation period.
-                let isVacationDay = false;
-                if (vacationDateObjLocal && reopenDateObjLocal) {
-                    const previousDayAtMidnight = new Date(previousWeekday);
-                    previousDayAtMidnight.setHours(0, 0, 0, 0);
-                    if (previousDayAtMidnight >= vacationDateObjLocal && previousDayAtMidnight < reopenDateObjLocal) {
-                        isVacationDay = true;
-                    }
-                }
 
-                if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
-                    continue;
+            let currentCheckDate = new Date();
+            for (let i = 0; i < maxDaysBack; i++) {
+                // Find next previous weekday
+                let checkDate = new Date(currentCheckDate);
+                let dayOfWeek = checkDate.getDay();
+                do {
+                    checkDate.setDate(checkDate.getDate() - 1);
+                    dayOfWeek = checkDate.getDay();
+                    const isVacationDay = vacationDateObjLocal && checkDate.toDateString() === vacationDateObjLocal.toDateString();
+                    if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
+                        continue;
+                    } else {
+                        break;
+                    }
+                } while (true);
+
+                const checkDayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+                const checkDayTime = checkDate.getTime();
+                const reopenTime = reopenDateObjLocal ? reopenDateObjLocal.getTime() : 0;
+                const isDuringVacationCheck = vacationDateObjLocal && nextTermBeginsObj && checkDate >= vacationDateObjLocal && checkDate < nextTermBeginsObj;
+
+                if (checkDayTime >= reopenTime && reopenTime > 0 && !isDuringVacationCheck) {
+                    for (const teacher of teachers.filter(t => t.role === 'TEACHER')) {
+                        const attendanceRecord = await db.getTeacherAttendance(teacher.id, checkDayStr);
+                        if (!attendanceRecord) {
+                            missedAlerts.push({
+                                teacherId: teacher.id,
+                                teacherName: teacher.name,
+                                date: checkDayStr,
+                                classes: teacher.assignedClassIds?.map(id =>
+                                    CLASSES_LIST.find(c => c.id === id)?.name
+                                ).join(', ') || 'Not Assigned'
+                            });
+                        }
+                    }
                 } else {
+                    // If this day is before reopen or during vacation, stop checking further back
                     break;
                 }
-            } while (true);
-            
-            const previousSchoolDay = `${previousWeekday.getFullYear()}-${String(previousWeekday.getMonth() + 1).padStart(2, '0')}-${String(previousWeekday.getDate()).padStart(2, '0')}`;
-
-            // Only show missed attendance alerts if the previous school day is on or after the reopen date
-            // This ensures we don't show alerts for dates during vacation when school just reopened
-            const previousWeekdayTime = previousWeekday.getTime();
-            const reopenDateTime = reopenDateObjLocal ? reopenDateObjLocal.getTime() : 0;
-            
-            console.log('Debug - Reopen date config:', config.schoolReopenDate);
-            console.log('Debug - Reopen parsed:', reopenDateObjLocal?.toDateString());
-            console.log('Debug - Previous school day:', previousSchoolDay);
-            console.log('Debug - Previous >= Reopen?:', previousWeekdayTime >= reopenDateTime);
-
-            const isDuringVacation = vacationDateObj && nextTermBeginsObj && previousWeekday >= vacationDateObj && previousWeekday < nextTermBeginsObj;
-            if (previousWeekdayTime >= reopenDateTime && reopenDateTime > 0 && !isDuringVacation) {
-                for (const teacher of teachers.filter(t => t.role === 'TEACHER' && t.assignedClassIds && t.assignedClassIds.length > 0)) {
-                    // Assuming a teacher is responsible for their first assigned class for this check
-                    const classId = teacher.assignedClassIds![0];
-                    const className = CLASSES_LIST.find(c => c.id === classId)?.name || 'Unknown Class';
-                    const studentAttendanceRecord = await db.getAttendance(classId, previousSchoolDay);
-                    if (!studentAttendanceRecord) {
-                        missedStudentAlerts.push({
-                            teacherId: teacher.id,
-                            teacherName: teacher.name,
-                            date: previousSchoolDay,
-                            className: className,
-                        });
-                    }
-                }
-            } else {
-                console.log('Debug - Skipping: previous weekday is before or equal to reopen date (or reopen date invalid)');
+                currentCheckDate = checkDate;
             }
         }
 
-        // Calculate term statistics for each teacher (only from school reopen date)
+        // Check for missed STUDENT attendance on recent school days
+        const missedStudentAlerts: any[] = [];
+
+        if (schoolHasReopened && !isOnVacation) {
+            // Parse dates
+            const parseLocalDate = (dateStr: string): Date | null => {
+                if (!dateStr) return null;
+                let parts: string[] = [];
+                if (dateStr.includes('-')) {
+                    parts = dateStr.split('-');
+                    if (parts.length === 3) {
+                        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                    }
+                } else if (dateStr.includes('/')) {
+                    parts = dateStr.split('/');
+                    if (parts.length === 3) {
+                        return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+                    }
+                }
+                return null;
+            };
+            const reopenDateObjLocal = parseLocalDate(config.schoolReopenDate);
+            const vacationDateObjLocal = parseLocalDate(config.vacationDate);
+
+            let currentCheckDate = new Date();
+            for (let i = 0; i < maxDaysBack; i++) {
+                // Find next previous weekday
+                let checkDate = new Date(currentCheckDate);
+                let dayOfWeek = checkDate.getDay();
+                do {
+                    checkDate.setDate(checkDate.getDate() - 1);
+                    dayOfWeek = checkDate.getDay();
+                    const isVacationDay = vacationDateObjLocal && checkDate.toDateString() === vacationDateObjLocal.toDateString();
+                    if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
+                        continue;
+                    } else {
+                        break;
+                    }
+                } while (true);
+
+                const checkDayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+                const checkDayTime = checkDate.getTime();
+                const reopenTime = reopenDateObjLocal ? reopenDateObjLocal.getTime() : 0;
+                const isDuringVacationCheck = vacationDateObjLocal && nextTermBeginsObj && checkDate >= vacationDateObjLocal && checkDate < nextTermBeginsObj;
+
+                if (checkDayTime >= reopenTime && reopenTime > 0 && !isDuringVacationCheck) {
+                    for (const teacher of teachers.filter(t => t.role === 'TEACHER' && t.assignedClassIds && t.assignedClassIds.length > 0)) {
+                        const classId = teacher.assignedClassIds![0];
+                        const className = CLASSES_LIST.find(c => c.id === classId)?.name || 'Unknown Class';
+                        const studentAttendanceRecord = await db.getAttendance(classId, checkDayStr);
+                        if (!studentAttendanceRecord) {
+                            missedStudentAlerts.push({
+                                teacherId: teacher.id,
+                                teacherName: teacher.name,
+                                date: checkDayStr,
+                                className: className,
+                            });
+                        }
+                    }
+                } else {
+                    // If this day is before reopen or during vacation, stop checking further back
+                    break;
+                }
+                currentCheckDate = checkDate;
+            }
+        }
+
+        // Helper function to count weekdays between two dates (inclusive)
+        const countWeekdays = (startDate: string, endDate: string): number => {
+            if (!startDate || !endDate) return 0;
+            const start = new Date(startDate + 'T00:00:00');
+            const end = new Date(endDate + 'T00:00:00');
+            let count = 0;
+            const current = new Date(start);
+            while (current <= end) {
+                const dayOfWeek = current.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Sunday or Saturday
+                    count++;
+                }
+                current.setDate(current.getDate() + 1);
+            }
+            return count;
+        };
+
+        // Calculate total possible school days in the term
+        const totalPossibleDays = countWeekdays(config.schoolReopenDate, config.vacationDate);
+
+        // Calculate term statistics for each teacher (only from school reopen date to vacation date)
         const teacherTermStats = teachers
             .filter(t => t.role === 'TEACHER')
             .map(teacher => {
-                const teacherRecords = allTeacherRecords.filter(r => r.teacherId === teacher.id && r.date >= (config.schoolReopenDate || ''));
+                const teacherRecords = allTeacherRecords.filter(r => r.teacherId === teacher.id && r.date >= (config.schoolReopenDate || '') && r.date <= (config.vacationDate || '9999-99-99'));
                 const presentDays = teacherRecords.filter(r => r.status === 'present').length;
-                const totalDays = teacherRecords.length;
+                const totalDays = totalPossibleDays; // Total possible school days in the term
                 const attendanceRate = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
 
                 return {
@@ -310,13 +314,27 @@ const AdminDashboard = () => {
                     CLASSES_LIST.find(c => c.id === id)?.name
                 ).join(', ') || 'Not Assigned'
             };
-        });
+        }) as any[];
 
-        setSchoolConfig({
+        setSchoolConfig(prev => ({
+            ...prev,
             academicYear: config.academicYear,
             currentTerm: config.currentTerm,
             schoolReopenDate: config.schoolReopenDate || ''
-        });
+        }));
+
+        // Check for automatic term transition
+        if (config.nextTermBegins && new Date() >= new Date(config.nextTermBegins + 'T00:00:00') && !config.termTransitionProcessed) {
+            try {
+                await db.resetForNewTerm(config);
+                showToast('Term transition completed automatically.', { type: 'success' });
+                // Refetch data after transition
+                setTimeout(() => fetchData(), 1000);
+            } catch (error) {
+                console.error('Auto term transition failed:', error);
+                showToast('Auto term transition failed. Please check settings.', { type: 'error' });
+            }
+        }
         
         // Use Dynamic Term Number from config string (e.g. "Term 2" -> 2)
         // Fallback to CURRENT_TERM constant if parsing fails
@@ -612,11 +630,12 @@ const AdminDashboard = () => {
         const unsubConfig = onSnapshot(configRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data() as any;
-                setSchoolConfig({
+                setSchoolConfig(prev => ({
+                    ...prev,
                     academicYear: data.academicYear || ACADEMIC_YEAR,
                     currentTerm: data.currentTerm || `Term ${CURRENT_TERM}`,
                     schoolReopenDate: data.schoolReopenDate || ''
-                });
+                }));
             }
         });
         return () => {
@@ -979,150 +998,6 @@ const AdminDashboard = () => {
             </div>
         );
     };
-
-  const AttendanceChart = () => {
-    // Return placeholder if week hasn't loaded yet
-    if (attendanceWeek === null) {
-        return (
-            <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-100 h-full flex flex-col items-center justify-center">
-                <div className="relative w-12 h-12 border-3 border-slate-100 border-t-red-900 rounded-full animate-spin"></div>
-                <p className="text-slate-400 text-sm mt-4">Loading attendance data...</p>
-            </div>
-        );
-    }
-
-    const data = stats.classAttendance;
-    const { monday, friday } = getWeekRange(attendanceWeek);
-    const effectiveCurrentWeekStart = getEffectiveCurrentWeekStart();
-    const isCurrentWeek = effectiveCurrentWeekStart.toDateString() === monday.toDateString();
-
-    // Parse date string safely to avoid timezone shift
-    const parseLocalDate = (dateString: string): Date => {
-        const parts = dateString.split('-');
-        if (parts.length === 3) {
-            return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        }
-        return new Date(dateString);
-    };
-
-    // Check if school has reopened
-    let schoolStatus = '';
-    let reopenDateObj: Date | null = null;
-    if (schoolConfig.schoolReopenDate) {
-        reopenDateObj = parseLocalDate(schoolConfig.schoolReopenDate);
-        const today = new Date();
-        if (reopenDateObj > today) {
-            schoolStatus = 'School Closed';
-        } else {
-            schoolStatus = 'School Open';
-        }
-    }
-
-    const formatDate = (date: Date) => {
-        return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
-    };
-
-    return (
-        <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-100 h-full flex flex-col">
-             {/* Header with Week Navigation */}
-             <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
-                <div>
-                    <h3 className="font-bold text-slate-800 text-lg">Class Attendance</h3>
-                    <p className="text-xs text-slate-500">Weekly participation overview</p>
-                </div>
-                {schoolStatus && (
-                    <div className={`text-xs font-bold px-3 py-1 rounded-full ${schoolStatus === 'School Closed' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {schoolStatus}
-                    </div>
-                )}
-            </div>
-
-            {/* Beautiful Week Selector */}
-            <div className="mb-6 p-4 bg-gradient-to-r from-red-50 to-amber-50 rounded-xl border border-red-100">
-                <div className="flex items-center justify-between">
-                    <button
-                        onClick={goToPreviousWeek}
-                        className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 hover:border-red-400 transition-colors shadow-sm text-slate-600 hover:text-red-700 font-semibold"
-                        title="Previous week"
-                    >
-                        ←
-                    </button>
-
-                    <div className="flex-1 mx-4 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                            <p className="text-sm font-semibold text-slate-800">
-                                {formatDate(monday)} — {formatDate(friday)}
-                            </p>
-                            <p className="text-xs text-slate-500 font-medium">
-                                {monday.getFullYear()}
-                            </p>
-                            {isCurrentWeek && (
-                                <span className="inline-block px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full mt-1 uppercase tracking-wide">
-                                    Current Week
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={goToNextWeek}
-                        disabled={isCurrentWeek}
-                        className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 hover:border-red-400 transition-colors shadow-sm text-slate-600 hover:text-red-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-slate-200 disabled:hover:text-slate-600"
-                        title={isCurrentWeek ? "You are viewing the current week" : "Next week"}
-                    >
-                        →
-                    </button>
-                </div>
-
-                {!isCurrentWeek && (
-                    <div className="mt-3 text-center">
-                        <button
-                            onClick={goToCurrentWeek}
-                            className="text-xs text-red-700 hover:text-red-800 font-semibold bg-white border border-red-200 px-3 py-1.5 rounded-md hover:bg-red-50 transition-colors"
-                        >
-                            Return to Current Week
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {/* School Closed Notice */}
-            {schoolStatus === 'School Closed' && reopenDateObj && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-800 font-semibold">
-                        School is currently closed. Attendance records will begin from {formatDate(reopenDateObj)}
-                    </p>
-                </div>
-            )}
-
-            {/* Attendance Bars */}
-            <div className="flex-1 flex items-end justify-between gap-1 sm:gap-2 px-1 pb-2 h-96 w-full overflow-x-auto">
-                {data.map((item) => {
-                    let barColor = 'bg-amber-500'; // Standard Noble Gold
-                    if (item.percentage < 50) barColor = 'bg-red-600'; // Warning Red
-                    else if (item.percentage >= 80) barColor = 'bg-emerald-500'; // Excellence
-
-                    return (
-                        <div key={item.id} className="flex flex-col items-center flex-1 group h-full justify-end min-w-[20px]">
-                            <div className="w-full max-w-[30px] bg-slate-50 rounded-t-sm relative flex items-end h-full hover:bg-slate-100 transition-colors">
-                                 <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
-                                     {item.className}: {item.percentage}%
-                                 </div>
-                                 <div 
-                                    className={`w-full ${barColor} rounded-t-sm transition-all duration-1000 ease-out relative`}
-                                    style={{ height: `${item.percentage}%` }}
-                                 ></div>
-                            </div>
-                            <span className="text-[10px] text-slate-400 mt-2 font-medium truncate w-full text-center">
-                                {item.className.replace('Nursery ', 'N').replace('Class ', 'P').replace('Primary ', 'P').replace('KG ', 'K').replace('JHS ', 'J')}
-                            </span>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    )
-  };
 
   const GenderDonut = () => {
      const total = stats.maleStudents + stats.femaleStudents || 1;
@@ -1551,18 +1426,12 @@ const AdminDashboard = () => {
               </div>
               <div>
                 <h3 className="font-bold text-red-900 text-lg">Attendance Alerts</h3>
-                <p className="text-red-700 text-sm">{missedAttendanceAlerts.length} teacher{missedAttendanceAlerts.length !== 1 ? 's' : ''} missed attendance on {(() => {
-                  const parts = missedAttendanceAlerts[0].date.split('-');
-                  if (parts.length === 3) {
-                    return `${parts[1]}/${parts[2]}/${parts[0]}`;
-                  }
-                  return missedAttendanceAlerts[0].date;
-                })()}</p>
+                <p className="text-red-700 text-sm">{missedAttendanceAlerts.length} teacher{missedAttendanceAlerts.length !== 1 ? 's' : ''} have missed attendance recently.</p>
               </div>
             </div>
             <div className="space-y-3">
               {missedAttendanceAlerts.map((alert: any) => (
-                <div key={alert.teacherId} className="bg-white p-4 rounded-lg border border-red-100 shadow-sm">
+                <div key={`${alert.teacherId}-${alert.date}`} className="bg-white p-4 rounded-lg border border-red-100 shadow-sm">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
@@ -1603,18 +1472,12 @@ const AdminDashboard = () => {
               </div>
               <div>
                 <h3 className="font-bold text-blue-900 text-lg">Missed Student Attendance</h3>
-                <p className="text-blue-700 text-sm">{missedStudentAttendanceAlerts.length} teacher{missedStudentAttendanceAlerts.length !== 1 ? 's' : ''} did not mark student attendance for {(() => {
-                  const parts = missedStudentAttendanceAlerts[0].date.split('-');
-                  if (parts.length === 3) {
-                    return `${parts[1]}/${parts[2]}/${parts[0]}`;
-                  }
-                  return missedStudentAttendanceAlerts[0].date;
-                })()}</p>
+                <p className="text-blue-700 text-sm">{missedStudentAttendanceAlerts.length} teacher{missedStudentAttendanceAlerts.length !== 1 ? 's' : ''} have not marked student attendance recently.</p>
               </div>
             </div>
             <div className="space-y-3">
               {missedStudentAttendanceAlerts.map((alert: any) => (
-                <div key={alert.teacherId} className="bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
+                <div key={`${alert.teacherId}-${alert.date}`} className="bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -1667,7 +1530,7 @@ const AdminDashboard = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
          <div className="lg:col-span-2 h-[550px]">
-            <AttendanceChart />
+            <AttendanceChart data={stats.classAttendance} week={attendanceWeek} onPreviousWeek={goToPreviousWeek} onNextWeek={goToNextWeek} onCurrentWeek={goToCurrentWeek} schoolReopenDate={schoolConfig.schoolReopenDate} />
          </div>
          <div className="h-96">
             <GenderDonut />
@@ -1808,7 +1671,7 @@ const AdminDashboard = () => {
                       <p className="text-[10px] sm:text-xs text-emerald-700 mt-0.5">Current day's staff presence overview</p>
                   </div>
                   <div className="bg-emerald-100 p-1.5 sm:p-2 rounded-full">
-                      <Users className="text-emerald-600" size={16} sm:size={20} />
+                      <Users className="text-emerald-600" size={16} />
                   </div>
               </div>
               <div className="p-3 space-y-2 flex-1 overflow-y-auto max-h-[300px] sm:max-h-[350px]">
@@ -1885,7 +1748,7 @@ const AdminDashboard = () => {
                       <p className="text-[10px] sm:text-xs text-blue-700 mt-0.5">Term-wide staff attendance statistics</p>
                   </div>
                   <div className="bg-blue-100 p-1.5 sm:p-2 rounded-full">
-                      <BarChart2 className="text-blue-600" size={16} sm:size={20} />
+                      <BarChart2 className="text-blue-600" size={16} />
                   </div>
               </div>
               <div className="p-3 space-y-2 flex-1 overflow-y-auto max-h-[300px] sm:max-h-[350px]">
