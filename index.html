@@ -1,56 +1,139 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
 
-<head>
-  <meta charset="UTF-8" />
-  <link rel="apple-touch-icon" sizes="57x57" href="/noble-care-academy-sms/assets/apple-icon-57x57-ZxcmkD8s.png">
-  <link rel="apple-touch-icon" sizes="60x60" href="/noble-care-academy-sms/assets/apple-icon-60x60-DrlLYegY.png">
-  <link rel="apple-touch-icon" sizes="72x72" href="/noble-care-academy-sms/assets/apple-icon-72x72-D6m2AwgU.png">
-  <link rel="apple-touch-icon" sizes="76x76" href="/noble-care-academy-sms/assets/apple-icon-76x76-SK4zwsNb.png">
-  <link rel="apple-touch-icon" sizes="114x114" href="/noble-care-academy-sms/assets/apple-icon-114x114-C_FAwfJS.png">
-  <link rel="apple-touch-icon" sizes="120x120" href="/noble-care-academy-sms/assets/apple-icon-120x120-BOqTqF1q.png">
-  <link rel="apple-touch-icon" sizes="144x144" href="/noble-care-academy-sms/assets/apple-icon-144x144-BB1qzNIz.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="/noble-care-academy-sms/assets/apple-icon-152x152-aBH_ABMR.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/noble-care-academy-sms/assets/apple-icon-180x180-C7mJV_Uv.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="/noble-care-academy-sms/assets/android-icon-192x192-BW5QuZO5.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/noble-care-academy-sms/assets/favicon-32x32-DdIDY9l-.png">
-  <link rel="icon" type="image/png" sizes="96x96" href="/noble-care-academy-sms/assets/favicon-96x96-DKaGTQq2.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/noble-care-academy-sms/assets/favicon-16x16-CvqMll2W.png">
-  <link rel="manifest" href="/noble-care-academy-sms/assets/manifest-CDWzSfel.json">
-  <meta name="msapplication-TileColor" content="#ffffff">
-  <meta name="msapplication-TileImage" content="/noble-care-academy-sms/assets/ms-icon-144x144-kfjqKR9U.png">
-  <meta name="theme-color" content="#ffffff">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Noble Care Academy SMS</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-    }
-  </style>
+    <link
+      rel="apple-touch-icon"
+      sizes="57x57"
+      href="/noble-care-academy-sms/assets/apple-icon-57x57-kbR8ImZ6.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="60x60"
+      href="/noble-care-academy-sms/assets/apple-icon-60x60-5jjirlzu.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="72x72"
+      href="/noble-care-academy-sms/assets/apple-icon-72x72-DN6x2kXk.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="76x76"
+      href="/noble-care-academy-sms/assets/apple-icon-76x76-Bcu1T4DA.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="114x114"
+      href="/noble-care-academy-sms/assets/apple-icon-114x114-CEDiV6cv.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="120x120"
+      href="/noble-care-academy-sms/assets/apple-icon-120x120--4BuYUvZ.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="144x144"
+      href="/noble-care-academy-sms/assets/apple-icon-144x144-BaH5FKVt.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="152x152"
+      href="/noble-care-academy-sms/assets/apple-icon-152x152-CCNENg9s.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/noble-care-academy-sms/assets/apple-icon-180x180-CeJtO7PD.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x192"
+      href="/noble-care-academy-sms/assets/android-icon-192x192-XjkomNYR.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/noble-care-academy-sms/assets/favicon-32x32-D4OwqT3f.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="/noble-care-academy-sms/assets/favicon-96x96-DaM0dBkP.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/noble-care-academy-sms/assets/favicon-16x16-B1bOIICx.png"
+    />
+    <link rel="manifest" href="/noble-care-academy-sms/assets/manifest-CO0q9IVi.json" />
+    <meta name="msapplication-TileColor" content="#ffffff" />
+    <meta name="msapplication-TileImage" content="/ms-icon-144x144.png" />
+    <meta name="theme-color" content="#ffffff" />
 
-  <link rel="stylesheet" href="/index.css">
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
-    "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
-    "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
-    "firebase/": "https://esm.sh/firebase@^12.7.0/"
-  }
-}
-</script>
-  <script type="module" crossorigin src="/noble-care-academy-sms/assets/index-DEbese_6.js"></script>
-</head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>School Manager GH</title>
+    <script>
+      /* Tailwind CDN theme override: define primary blue scale as single source of truth */
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: "#eff6ff",
+                100: "#dbeafe",
+                200: "#bfdbfe",
+                300: "#93c5fd",
+                400: "#60a5fa",
+                500: "#3b82f6",
+                600: "#2563eb",
+                700: "#1d4ed8",
+                800: "#1e40af",
+                900: "#1e3a8a",
+                950: "#172554",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+      }
+    </style>
 
-<body>
-  <div id="root"></div>
-</body>
+    <link rel="stylesheet" href="/index.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "react/": "https://esm.sh/react@^19.2.3/",
+          "react": "https://esm.sh/react@^19.2.3",
+          "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+          "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+          "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0",
+          "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+          "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+          "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
+          "firebase/": "https://esm.sh/firebase@^12.7.0/"
+        }
+      }
+    </script>
+    <script type="module" crossorigin src="/noble-care-academy-sms/assets/index-DEjnpN27.js"></script>
+  </head>
 
+  <body>
+    <div id="root"></div>
+  </body>
 </html>
