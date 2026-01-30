@@ -99,7 +99,7 @@ const Login = () => {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-red-900 animate-pulse font-semibold">
-          Loading School Manager GH...
+          Loading Noble Care Academy...
         </div>
       </div>
     );
@@ -154,18 +154,18 @@ const Login = () => {
           <div className="mx-auto w-28 h-28 mb-4 relative p-2 bg-white rounded-full shadow-sm border border-[#E6F0FA]">
             <img
               src={schoolLogo}
-              alt="School Manager GH Logo"
+              alt="Noble Care Academy Logo"
               className="w-full h-full object-contain rounded-full"
               onError={(e) => {
                 // Fallback if image not found
                 e.currentTarget.style.display = "none";
                 e.currentTarget.parentElement!.innerHTML =
-                  '<div class="w-24 h-24 bg-[#0B4A82] rounded-full flex items-center justify-center text-[#E6F0FA] font-bold border-4 border-[#1160A8] text-xs text-center p-1">SCHOOL MANAGER GH</div>';
+                  '<div class="w-24 h-24 bg-[#0B4A82] rounded-full flex items-center justify-center text-[#E6F0FA] font-bold border-4 border-[#1160A8] text-xs text-center p-1">Noble Care Academy</div>';
               }}
             />
           </div>
           <h1 className="text-2xl font-bold text-[#0B4A82] font-serif">
-            School Manager GH
+            Noble Care Academy
           </h1>
           <p className="text-slate-500 mt-2 text-sm">
             {isResetting
@@ -296,7 +296,7 @@ const Login = () => {
 
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
           <p className="text-xs text-slate-400">
-            &copy; {new Date().getFullYear()} School Manager GH &bull;
+            &copy; {new Date().getFullYear()} Noble Care Academy &bull;
             Empowering Excellence
           </p>
         </div>
@@ -306,4 +306,3 @@ const Login = () => {
 };
 
 export default Login;
-

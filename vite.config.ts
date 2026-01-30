@@ -1,28 +1,28 @@
-import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react';
+import path from "path";
+import { defineConfig, loadEnv } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, '.', '');
+  const env = loadEnv(mode, ".", "");
 
-    return {
-      // ✅ Dev server config (unchanged)
-      server: {
-        port: 3000,
-        host: '0.0.0.0',
+  return {
+    // ✅ Dev server config (unchanged)
+    server: {
+      port: 3000,
+      host: "0.0.0.0",
+    },
+
+    // ✅ Plugins
+    plugins: [react()],
+
+    // ✅ Module resolution aliases
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "."),
       },
+    },
 
-      // ✅ Plugins
-      plugins: [react()],
-
-      // ✅ Module resolution aliases
-      resolve: {
-        alias: {
-          '@': path.resolve(__dirname, '.'),
-        },
-      },
-
-      // ✅ Fix blank page on GitHub Pages
-      base: '/noble-care-academy-sms/', // <-- ADD THIS LINE
-    };
+    // ✅ Fix blank page on GitHub Pages
+    base: "/noble-care-academy/", // <-- ADD THIS LINE
+  };
 });

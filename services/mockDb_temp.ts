@@ -45,7 +45,7 @@ class FirestoreService {
     const snap = await getDoc(docRef);
     if (snap.exists()) return snap.data() as any;
     return {
-      schoolName: "School Manager GH",
+      schoolName: "Noble Care Academy",
       academicYear: ACADEMIC_YEAR,
       currentTerm: `Term ${CURRENT_TERM}`,
     };

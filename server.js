@@ -1,8 +1,11 @@
+import fs from "fs";
+import path from "path";
 import express from "express";
 import admin from "firebase-admin";
 import cors from "cors";
 import dotenv from "dotenv";
 
+dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 const app = express();
@@ -13,15 +16,24 @@ app.use(express.json());
 
 let serviceAccount;
 try {
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    const resolvedPath = path.resolve(
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+    );
+    const rawJson = fs.readFileSync(resolvedPath, "utf8");
+    serviceAccount = JSON.parse(rawJson);
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+  } else {
     throw new Error(
-      "FIREBASE_SERVICE_ACCOUNT_KEY is not set in the environment.",
+      "FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_KEY is not set in the environment.",
     );
   }
-  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 } catch (error) {
   console.error("CRITICAL: Failed to parse Firebase Service Account Key.");
-  console.error("Ensure FIREBASE_SERVICE_ACCOUNT_KEY is a valid JSON string.");
+  console.error(
+    "Set FIREBASE_SERVICE_ACCOUNT_PATH to the JSON file path or FIREBASE_SERVICE_ACCOUNT_KEY to a valid JSON string.",
+  );
   console.error("Original Error:", error.message);
   process.exit(1);
 }

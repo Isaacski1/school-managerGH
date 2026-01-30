@@ -10,7 +10,7 @@
     "server:dev": "nodemon server.js",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "homepage": "https://Isaacski1.github.io/noble-care-academy-sms"
+    "homepage": "https://Isaacski1.github.io/noble-care-academy"
   },
   "dependencies": {
     "cors": "^2.8.5",

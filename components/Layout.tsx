@@ -152,7 +152,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
               <div className="w-20 h-20 mb-3 bg-white rounded-full p-1 shadow-lg border-2 border-[#E6F0FA] overflow-hidden">
                 <img
                   src={schoolLogo}
-                  alt="School Manager GH Logo"
+                  alt="Noble Care Academy Logo"
                   className="w-full h-full object-contain rounded-full"
                 />
               </div>
@@ -405,4 +405,3 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 };
 
 export default Layout;
-

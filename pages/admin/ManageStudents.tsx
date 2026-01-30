@@ -834,7 +834,7 @@ const ManageStudents = () => {
             {/* Footer */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
               <p className="text-xs text-slate-400">
-                Generated automatically by School Manager GH System
+                Generated automatically by Noble Care Academy System
               </p>
             </div>
           </div>
@@ -845,4 +845,3 @@ const ManageStudents = () => {
 };
 
 export default ManageStudents;
-
