@@ -23,6 +23,6 @@ export default defineConfig(({ mode }) => {
     },
 
     // ✅ Fix blank page on GitHub Pages
-    base: "/noble-care-academy/", // <-- ADD THIS LINE
+    base: "/school-manager-gh/", // <-- ADD THIS LINE
   };
 });

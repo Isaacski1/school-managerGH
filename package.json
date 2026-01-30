@@ -1,5 +1,5 @@
 {
-  "name": "noble-care-academy",
+  "name": "school-manager-gh",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,7 +10,7 @@
     "server:dev": "nodemon server.js",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "homepage": "https://Isaacski1.github.io/noble-care-academy"
+    "homepage": "https://Isaacski1.github.io/school-manager-gh"
   },
   "dependencies": {
     "cors": "^2.8.5",
