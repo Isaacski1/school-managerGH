@@ -19,15 +19,23 @@ app.use(express.json());
 // --- Robust Firebase Admin SDK Initialization ---
 
 let serviceAccount;
+const normalizeServiceAccount = (account) => {
+  if (account && typeof account.private_key === "string") {
+    account.private_key = account.private_key.replace(/\\n/g, "\n");
+  }
+  return account;
+};
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH) {
     const resolvedPath = path.resolve(
       process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
     );
     const rawJson = fs.readFileSync(resolvedPath, "utf8");
-    serviceAccount = JSON.parse(rawJson);
+    serviceAccount = normalizeServiceAccount(JSON.parse(rawJson));
   } else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    serviceAccount = normalizeServiceAccount(
+      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY),
+    );
   } else {
     throw new Error(
       "FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_KEY is not set in the environment.",
