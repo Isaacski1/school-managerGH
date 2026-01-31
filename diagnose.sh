@@ -29,9 +29,9 @@ echo ""
 
 # Check if backend is running
 echo "2️⃣  Checking if backend is running on port 3001..."
-if curl -s http://localhost:3001/health > /dev/null 2>&1; then
+if curl -s http://API_BASE_URL/health > /dev/null 2>&1; then
     echo "   ✅ Backend is running!"
-    HEALTH=$(curl -s http://localhost:3001/health)
+    HEALTH=$(curl -s http://API_BASE_URL/health)
     echo "   Health check response: $HEALTH"
 else
     echo "   ❌ Backend is NOT running!"
@@ -50,7 +50,7 @@ if [ -f .env.local ]; then
         echo "   Value: $BACKEND_URL"
     else
         echo "   ⚠️  VITE_BACKEND_URL not found"
-        echo "   👉 Add to .env.local: VITE_BACKEND_URL=http://localhost:3001"
+        echo "   👉 Add to .env.local: VITE_BACKEND_URL=http://API_BASE_URL"
     fi
 else
     echo "   ⚠️  .env.local not found"

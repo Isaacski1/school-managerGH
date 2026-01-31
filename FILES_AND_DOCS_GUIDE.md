@@ -53,7 +53,7 @@
   - Added dev dependency: nodemon
 
 - **`.env.local`**
-  - Added `VITE_BACKEND_URL=http://localhost:3001`
+  - Added `VITE_BACKEND_URL=http://API_BASE_URL`
 
 ---
 
@@ -186,7 +186,7 @@ FIREBASE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}
 ### Frontend (.env.local)
 
 ```env
-VITE_BACKEND_URL=http://localhost:3001
+VITE_BACKEND_URL=http://API_BASE_URL
 ```
 
 ### Production (set in Render/Railway)

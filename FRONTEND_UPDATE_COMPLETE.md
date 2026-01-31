@@ -35,8 +35,8 @@ const result = await createSchoolAdmin({
 **Configuration:**
 
 - Backend URL: Read from `VITE_BACKEND_URL` environment variable
-- Fallback: `http://localhost:3001`
-- ✅ `.env.local` already has `VITE_BACKEND_URL=http://localhost:3001`
+- Fallback: `http://API_BASE_URL`
+- ✅ `.env.local` already has `VITE_BACKEND_URL=http://API_BASE_URL`
 
 ### 2. `pages/super-admin/SchoolDetails.tsx` (MODIFIED)
 
@@ -125,7 +125,7 @@ All errors are properly caught and displayed to the user:
 
 - `"Caller is not super_admin"` - Wrong user role
 - `"Email already in use"` - Firebase Auth constraint
-- `"Cannot connect to backend at http://localhost:3001"` - Server not running
+- `"Cannot connect to backend at http://API_BASE_URL"` - Server not running
 - `"Session expired. Please log in again."` - User not authenticated
 
 ### Frontend Behavior:
@@ -185,7 +185,7 @@ All errors are properly caught and displayed to the user:
 
 ✅ **Already configured:**
 
-- `.env.local` has `VITE_BACKEND_URL=http://localhost:3001`
+- `.env.local` has `VITE_BACKEND_URL=http://API_BASE_URL`
 - Backend server running on port 3001
 - Fresh Firebase service account credentials in backend
 
@@ -329,5 +329,5 @@ If issues occur, can revert to client-side creation:
 ---
 
 **Status:** ✅ Frontend integration complete and ready for testing
-**Backend:** ✅ Running on localhost:3001
+**Backend:** ✅ Running on API_BASE_URL
 **Database:** ✅ Connected with fresh credentials

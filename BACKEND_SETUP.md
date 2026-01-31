@@ -44,7 +44,7 @@ npm run dev
 npm start
 ```
 
-The server will run on `http://localhost:3001`
+The server will run on `http://API_BASE_URL`
 
 ### 5. Run Frontend (in another terminal)
 
@@ -160,12 +160,12 @@ npm run dev
 
 ## Environment Variables Reference
 
-| Variable                       | Value                                             | Notes                 |
-| ------------------------------ | ------------------------------------------------- | --------------------- |
-| `PORT`                         | 3001                                              | Backend server port   |
-| `FIREBASE_PROJECT_ID`          | noble-care-management-system                      | Your Firebase project |
-| `FIREBASE_SERVICE_ACCOUNT_KEY` | Service account JSON                              | From Firebase console |
-| `VITE_BACKEND_URL`             | http://localhost:3001 (dev) or https://... (prod) | Frontend uses this    |
+| Variable                       | Value                                           | Notes                 |
+| ------------------------------ | ----------------------------------------------- | --------------------- |
+| `PORT`                         | 3001                                            | Backend server port   |
+| `FIREBASE_PROJECT_ID`          | noble-care-management-system                    | Your Firebase project |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | Service account JSON                            | From Firebase console |
+| `VITE_BACKEND_URL`             | http://API_BASE_URL (dev) or https://... (prod) | Frontend uses this    |
 
 ---
 
@@ -179,7 +179,7 @@ npm install firebase-admin
 
 ### Backend URL not working
 
-- Check if backend is running: `curl http://localhost:3001/health`
+- Check if backend is running: `curl http://API_BASE_URL/health`
 - Check `VITE_BACKEND_URL` in `.env.local`
 - Check CORS is enabled (it is in server.js)
 

@@ -156,10 +156,10 @@ cat .env
 
 # 3. Check .env.local has backend URL
 cat .env.local
-# Should have: VITE_BACKEND_URL=http://localhost:3001
+# Should have: VITE_BACKEND_URL=http://API_BASE_URL
 
 # 4. Test backend responds
-curl http://localhost:3001/health
+curl http://API_BASE_URL/health
 # Should return: {"status":"ok"}
 
 # 5. Restart frontend

@@ -62,7 +62,7 @@ Teacher creation now works on Spark plan, deployable FREE to Render/Railway
   - Added: `npm run server` and `npm run server:dev`
   - Added: express, cors, dotenv, firebase-admin, nodemon
 - ✅ `.env.local`
-  - Added: `VITE_BACKEND_URL=http://localhost:3001`
+  - Added: `VITE_BACKEND_URL=http://API_BASE_URL`
 
 ---
 

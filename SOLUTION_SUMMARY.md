@@ -124,7 +124,7 @@ npm run dev
                      ↓
 ┌─────────────────────────────────────────────────────────┐
 │            Node.js Backend Server (Express)             │
-│   (localhost:3001 or render.onrender.com)               │
+│   (API_BASE_URL or render.onrender.com)               │
 │                                                         │
 │  • Verify ID token                                      │
 │  • Check user role                                      │

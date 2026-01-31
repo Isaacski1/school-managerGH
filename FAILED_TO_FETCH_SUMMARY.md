@@ -42,7 +42,7 @@ FIREBASE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}
 Should have:
 
 ```env
-VITE_BACKEND_URL=http://localhost:3001
+VITE_BACKEND_URL=http://API_BASE_URL
 ```
 
 ### Step 4: Restart Frontend
@@ -63,7 +63,7 @@ Try to create a teacher. The error message should now be more helpful!
 
 Instead of just "Failed to fetch", you'll now see:
 
-- **"Cannot connect to backend at http://localhost:3001..."** → Backend isn't running
+- **"Cannot connect to backend at http://API_BASE_URL..."** → Backend isn't running
 - **"Invalid or expired authentication token"** → User not logged in
 - **"A user with this email already exists"** → Email already used
 - **Actual error message** → From the backend
@@ -88,7 +88,7 @@ bash diagnose.sh
 
 ```bash
 # Test backend is responding
-curl http://localhost:3001/health
+curl http://API_BASE_URL/health
 # Should return: {"status":"ok"}
 ```
 
@@ -116,7 +116,7 @@ Before trying to create a teacher, verify:
 
 - [ ] `.env` file exists with all 3 variables
 - [ ] Backend running: `npm run server:dev` shows "Server running on port 3001"
-- [ ] `.env.local` has `VITE_BACKEND_URL=http://localhost:3001`
+- [ ] `.env.local` has `VITE_BACKEND_URL=http://API_BASE_URL`
 - [ ] Frontend running: `npm run dev`
 - [ ] No errors in browser console (F12)
 

@@ -210,7 +210,7 @@ noble-care-academy/
                  │ {fullName, email, password, idToken}
                  ↓
 ┌─────────────────────────────────────┐
-│  Backend Server (localhost:3001)    │
+│  Backend Server (API_BASE_URL)    │
 │  Express.js - Teacher creation API  │
 │  • Verify token                     │
 │  • Check permissions                │

@@ -104,13 +104,13 @@ npm run server:dev
 **Check backend URL in `.env.local`:**
 
 ```env
-VITE_BACKEND_URL=http://localhost:3001
+VITE_BACKEND_URL=http://API_BASE_URL
 ```
 
 **Then test backend is responding:**
 
 ```bash
-curl http://localhost:3001/health
+curl http://API_BASE_URL/health
 ```
 
 Should return: `{"status":"ok"}`
@@ -132,7 +132,7 @@ Common errors:
 ### Test 1: Health Check
 
 ```bash
-curl http://localhost:3001/health
+curl http://API_BASE_URL/health
 ```
 
 Expected: `{"status":"ok"}`
@@ -145,7 +145,7 @@ Expected: `{"status":"ok"}`
 4. Paste:
 
 ```javascript
-fetch("http://localhost:3001/health")
+fetch("http://API_BASE_URL/health")
   .then((r) => r.json())
   .then((data) => console.log("✅ Backend works!", data))
   .catch((e) => console.error("❌ Backend error:", e.message));
@@ -172,7 +172,7 @@ Should print: `✅ Backend works! {status: "ok"}`
 - [ ] `FIREBASE_SERVICE_ACCOUNT_KEY` is valid JSON
 - [ ] `VITE_BACKEND_URL` in `.env.local` is correct
 - [ ] Port 3001 is available (not in use)
-- [ ] Browser can reach backend: `curl http://localhost:3001/health` returns ok
+- [ ] Browser can reach backend: `curl http://API_BASE_URL/health` returns ok
 - [ ] No errors in backend console
 - [ ] No errors in browser console (F12)
 
@@ -195,7 +195,7 @@ npm run server:dev
 **In a different terminal:**
 
 ```bash
-curl http://localhost:3001/health
+curl http://API_BASE_URL/health
 # Should return: {"status":"ok"}
 ```
 
@@ -204,7 +204,7 @@ curl http://localhost:3001/health
 ```bash
 # In project root
 cat .env.local
-# Should show: VITE_BACKEND_URL=http://localhost:3001
+# Should show: VITE_BACKEND_URL=http://API_BASE_URL
 ```
 
 ### Step 4: Check Browser Console (F12)
@@ -233,7 +233,7 @@ cat .env.local
 # Copy the token
 
 # Then test backend:
-curl -X POST http://localhost:3001/api/createTeacher \
+curl -X POST http://API_BASE_URL/api/createTeacher \
   -H "Content-Type: application/json" \
   -d '{
     "fullName": "Test Teacher",
@@ -317,7 +317,7 @@ If on VPN, localhost might not work:
 1. **Check backend console:** Look for error messages
 2. **Check browser console (F12):** Look for network errors
 3. **Check Network tab (F12):** See the failed request details
-4. **Test health endpoint:** `curl http://localhost:3001/health`
+4. **Test health endpoint:** `curl http://API_BASE_URL/health`
 
 ### Collect Info & Share
 
@@ -333,7 +333,7 @@ When asking for help, share:
 ## Success Indicators
 
 ✅ Backend running: `Server running on port 3001`
-✅ Health check works: `curl localhost:3001/health` returns ok
+✅ Health check works: `curl API_BASE_URL/health` returns ok
 ✅ Can create teacher: Success modal appears
 ✅ No errors in console: F12 shows no red errors
 
@@ -346,7 +346,7 @@ When asking for help, share:
 npm run server:dev
 
 # Check if running
-curl http://localhost:3001/health
+curl http://API_BASE_URL/health
 
 # Kill port 3001
 netstat -ano | findstr :3001

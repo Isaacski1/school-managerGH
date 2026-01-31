@@ -129,7 +129,7 @@ If you still get "Authentication failed" after logging out/in:
 1. Open DevTools (F12)
 2. Go to Network tab
 3. Click "Create Admin"
-4. Look for POST request to `http://localhost:3001/api/superadmin/create-school-admin`
+4. Look for POST request to `http://API_BASE_URL/api/superadmin/create-school-admin`
 5. Check the response for error details
 
 ### Contact Support:

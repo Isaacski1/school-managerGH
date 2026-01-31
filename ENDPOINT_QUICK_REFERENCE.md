@@ -3,7 +3,7 @@
 ## 1️⃣ Create School Admin (Super Admin Only)
 
 ```
-POST http://localhost:3001/api/superadmin/create-school-admin
+POST http://API_BASE_URL/api/superadmin/create-school-admin
 Content-Type: application/json
 
 {
@@ -43,7 +43,7 @@ Content-Type: application/json
 ## 2️⃣ Provision Missing User (Super Admin Only)
 
 ```
-POST http://localhost:3001/api/superadmin/provision-user
+POST http://API_BASE_URL/api/superadmin/provision-user
 Content-Type: application/json
 
 {
@@ -91,7 +91,7 @@ Content-Type: application/json
 No changes to this endpoint, but error messages improved:
 
 ```
-POST http://localhost:3001/api/createTeacher
+POST http://API_BASE_URL/api/createTeacher
 Content-Type: application/json
 
 {
@@ -120,8 +120,7 @@ async function createSchoolAdmin() {
   if (!currentUser) return;
 
   const idToken = await currentUser.getIdToken(true);
-  const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://API_BASE_URL";
 
   try {
     const response = await fetch(
@@ -162,7 +161,7 @@ async function createSchoolAdmin() {
 SUPER_ADMIN_TOKEN="eyJhbGci..."
 
 # Create school admin
-curl -X POST http://localhost:3001/api/superadmin/create-school-admin \
+curl -X POST http://API_BASE_URL/api/superadmin/create-school-admin \
   -H "Content-Type: application/json" \
   -d '{
     "idToken": "'$SUPER_ADMIN_TOKEN'",

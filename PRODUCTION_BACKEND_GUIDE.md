@@ -193,7 +193,7 @@ npm install
 
 ### Backend URL not working
 
-- If local: http://localhost:3001/health should return `{"status":"ok"}`
+- If local: http://API_BASE_URL/health should return `{"status":"ok"}`
 - If production: check Render/Railway deployment logs
 - Verify `VITE_BACKEND_URL` in `.env.local` matches your actual backend URL
 

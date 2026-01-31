@@ -33,7 +33,7 @@ Write-Host ""
 # Check if backend is running
 Write-Host "2️⃣  Checking if backend is running on port 3001..." -ForegroundColor Yellow
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:3001/health" -ErrorAction Stop
+    $response = Invoke-WebRequest -Uri "http://API_BASE_URL/health" -ErrorAction Stop
     Write-Host "   ✅ Backend is running!" -ForegroundColor Green
     Write-Host "   Health check response: $($response.Content)" -ForegroundColor Green
 } catch {
@@ -61,7 +61,7 @@ if (Test-Path .env.local) {
         Write-Host "   Value: $backendUrl" -ForegroundColor Green
     } else {
         Write-Host "   ⚠️  VITE_BACKEND_URL not found" -ForegroundColor Yellow
-        Write-Host "   👉 Add to .env.local: VITE_BACKEND_URL=http://localhost:3001" -ForegroundColor Yellow
+        Write-Host "   👉 Add to .env.local: VITE_BACKEND_URL=http://API_BASE_URL" -ForegroundColor Yellow
     }
 } else {
     Write-Host "   ⚠️  .env.local not found" -ForegroundColor Yellow

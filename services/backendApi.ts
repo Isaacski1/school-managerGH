@@ -7,7 +7,7 @@
 import { getFreshIdToken } from "./authToken";
 
 const BACKEND_URL =
-  (import.meta as any).env.VITE_BACKEND_URL || "http://localhost:3001";
+  (import.meta as any).env.VITE_BACKEND_URL || "http://API_BASE_URL";
 
 class ApiError extends Error {
   constructor(

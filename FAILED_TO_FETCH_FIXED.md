@@ -22,7 +22,7 @@ When trying to create a teacher, you got **"Failed to fetch"** error with no hel
 ### After:
 
 ```
-❌ Cannot connect to backend at http://localhost:3001.
+❌ Cannot connect to backend at http://API_BASE_URL.
    Make sure: 1) Backend server is running (npm run server:dev),
    2) Backend URL is correct in .env.local
 ```
@@ -76,13 +76,13 @@ This automatically checks:
 
 ## Common Causes & Fixes
 
-| Cause                  | Fix                                          |
-| ---------------------- | -------------------------------------------- |
-| Backend not running    | `npm run server:dev`                         |
-| `.env` file missing    | Create `.env` with Firebase credentials      |
-| `.env.local` missing   | Add `VITE_BACKEND_URL=http://localhost:3001` |
-| Port 3001 in use       | Kill process: `taskkill /PID <PID> /F`       |
-| Frontend not restarted | Kill and run `npm run dev` again             |
+| Cause                  | Fix                                        |
+| ---------------------- | ------------------------------------------ |
+| Backend not running    | `npm run server:dev`                       |
+| `.env` file missing    | Create `.env` with Firebase credentials    |
+| `.env.local` missing   | Add `VITE_BACKEND_URL=http://API_BASE_URL` |
+| Port 3001 in use       | Kill process: `taskkill /PID <PID> /F`     |
+| Frontend not restarted | Kill and run `npm run dev` again           |
 
 ---
 
@@ -137,7 +137,7 @@ When everything works, you should see:
 
 ```bash
 # Test 1: Backend responds
-curl http://localhost:3001/health
+curl http://API_BASE_URL/health
 # Should return: {"status":"ok"}
 
 # Test 2: List processes on port 3001
