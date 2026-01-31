@@ -33,9 +33,18 @@ try {
     const rawJson = fs.readFileSync(resolvedPath, "utf8");
     serviceAccount = normalizeServiceAccount(JSON.parse(rawJson));
   } else if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    serviceAccount = normalizeServiceAccount(
-      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY),
-    );
+    let rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim();
+    if (
+      (rawKey.startsWith('"') && rawKey.endsWith('"')) ||
+      (rawKey.startsWith("'") && rawKey.endsWith("'"))
+    ) {
+      rawKey = rawKey.slice(1, -1);
+    }
+    let parsedKey = JSON.parse(rawKey);
+    if (typeof parsedKey === "string") {
+      parsedKey = JSON.parse(parsedKey);
+    }
+    serviceAccount = normalizeServiceAccount(parsedKey);
   } else {
     throw new Error(
       "FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_KEY is not set in the environment.",
