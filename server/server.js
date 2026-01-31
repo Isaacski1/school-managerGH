@@ -613,6 +613,10 @@ app.post(
 /**
  * Health check endpoint
  */
+app.get("/", (req, res) => {
+  res.send("School Manager GH Backend is running ✅");
+});
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
