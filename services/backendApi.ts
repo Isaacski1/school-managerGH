@@ -5,9 +5,9 @@
  */
 
 import { getFreshIdToken } from "./authToken";
+import { API_BASE_URL } from "../src/config";
 
-const BACKEND_URL =
-  (import.meta as any).env.VITE_BACKEND_URL || "http://API_BASE_URL";
+const BACKEND_URL = API_BASE_URL;
 
 class ApiError extends Error {
   constructor(
