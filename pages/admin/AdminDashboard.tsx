@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
 import { showToast } from "../../services/toast";
@@ -26,6 +26,9 @@ import {
   Trophy,
   RefreshCw,
   AlertOctagon,
+  Wallet,
+  Timer,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Notice,
@@ -43,6 +46,24 @@ import {
   calculateTotalScore,
 } from "../../constants";
 import AttendanceChart from "../../components/dashboard/AttendanceChart";
+
+const MemoAttendanceChart = React.memo(AttendanceChart);
+
+const SkeletonBlock: React.FC<{ className?: string }> = ({
+  className = "h-4 bg-slate-100 rounded animate-pulse",
+}) => <div className={className} />;
+
+const SectionLoadingBadge: React.FC<{ label?: string }> = ({
+  label = "Loading",
+}) => (
+  <div className="inline-flex items-center gap-2 text-xs text-slate-500">
+    <span className="relative inline-flex h-4 w-4">
+      <span className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-400 via-[#0B4A82] to-emerald-400 opacity-60 blur-[1px]" />
+      <span className="absolute inset-0 rounded-full border-2 border-slate-200 border-t-[#0B4A82] animate-spin" />
+    </span>
+    {label}…
+  </div>
+);
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -62,7 +83,14 @@ const AdminDashboard = () => {
   });
   const [notices, setNotices] = useState<Notice[]>([]);
   const [recentStudents, setRecentStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dashboardStatsCache, setDashboardStatsCache] = useState<
+    typeof stats | null
+  >(null);
+  const [loading, setLoading] = useState(false);
+  const [initialDataReady, setInitialDataReady] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [heavyLoading, setHeavyLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -118,6 +146,53 @@ const AdminDashboard = () => {
   >({ A: [], B: [], C: [], D: [], F: [] });
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
 
+  const subscriptionReminder = useMemo(() => {
+    const rawCreatedAt =
+      school?.createdAt || (school as any)?.billing?.createdAt || null;
+    if (!rawCreatedAt) return null;
+
+    const createdAt =
+      rawCreatedAt instanceof Date
+        ? rawCreatedAt
+        : new Date(
+            typeof rawCreatedAt?.toDate === "function"
+              ? rawCreatedAt.toDate()
+              : (rawCreatedAt as any),
+          );
+    if (Number.isNaN(createdAt.getTime())) return null;
+
+    const plan = (school?.plan as string) || "monthly";
+    const planMonths = plan === "termly" ? 4 : plan === "yearly" ? 12 : 1;
+    const planLabel =
+      plan === "termly" ? "Termly" : plan === "yearly" ? "Yearly" : "Monthly";
+    const baseFee = 300;
+    const planFee = baseFee * planMonths;
+
+    const dueDate = new Date(createdAt);
+    dueDate.setMonth(dueDate.getMonth() + planMonths);
+    const nowDate = new Date(now);
+    const diffMs = dueDate.getTime() - nowDate.getTime();
+    const isOverdue = diffMs < 0;
+    const absMs = Math.abs(diffMs);
+    const days = Math.floor(absMs / (24 * 60 * 60 * 1000));
+    const hours = Math.floor((absMs / (60 * 60 * 1000)) % 24);
+    const minutes = Math.floor((absMs / (60 * 1000)) % 60);
+    const seconds = Math.floor((absMs / 1000) % 60);
+
+    return {
+      createdAt,
+      dueDate,
+      isOverdue,
+      days,
+      hours,
+      minutes,
+      seconds,
+      planLabel,
+      planMonths,
+      planFee,
+    };
+  }, [school?.createdAt, now]);
+
   // Advanced visualization state
   const [heatmapData, setHeatmapData] = useState<
     Record<string, Record<string, number>>
@@ -136,443 +211,554 @@ const AdminDashboard = () => {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Student>>({});
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      if (!schoolId) {
-        setError("School context not loaded.");
-        return;
-      }
-      const dashboardStats = await db.getDashboardStats(schoolId);
-      const students = await db.getStudents(schoolId);
-      const fetchedNotices = await db.getNotices(schoolId);
-      const config = await db.getSchoolConfig(schoolId);
+  const summaryCacheKey = useMemo(
+    () => (schoolId ? `admin_dashboard_summary_${schoolId}` : ""),
+    [schoolId],
+  );
 
-      // Teacher Attendance for today and term statistics
-      const localToday = new Date();
-      const today = `${localToday.getFullYear()}-${String(localToday.getMonth() + 1).padStart(2, "0")}-${String(localToday.getDate()).padStart(2, "0")}`;
-      const teachers = await db.getUsers(schoolId);
-
-      // Get today's attendance
-      const teacherAttendanceData = await db.getAllTeacherAttendance(
-        schoolId,
-        today,
-      );
-
-      // Get all teacher attendance records for term statistics
-      const allTeacherRecords =
-        await db.getAllTeacherAttendanceRecords(schoolId);
-
-      // Check for missed attendance on recent school days (weekdays)
-      const missedAlerts: any[] = [];
-
-      // Only check if school has reopened and there are attendance records in the database
-      const currentDate = new Date();
-      const reopenDateObj = config.schoolReopenDate
-        ? new Date(config.schoolReopenDate + "T00:00:00")
-        : null;
-      const schoolHasReopened = !reopenDateObj || currentDate >= reopenDateObj;
-      const vacationDateObj = config.vacationDate
-        ? new Date(config.vacationDate + "T00:00:00")
-        : null;
-      if (vacationDateObj) vacationDateObj.setHours(0, 0, 0, 0);
-      const nextTermBeginsObj = config.nextTermBegins
-        ? new Date(config.nextTermBegins + "T00:00:00")
-        : null;
-      currentDate.setHours(0, 0, 0, 0);
-      const isOnVacation =
-        vacationDateObj &&
-        nextTermBeginsObj &&
-        currentDate >= vacationDateObj &&
-        currentDate < nextTermBeginsObj;
-
-      const maxDaysBack = 5; // Check up to 5 previous school days for missed attendance
-
-      if (schoolHasReopened && !isOnVacation && allTeacherRecords.length > 0) {
-        // Parse dates
-        const parseLocalDate = (dateStr: string): Date | null => {
-          if (!dateStr) return null;
-          let parts: string[] = [];
-          if (dateStr.includes("-")) {
-            parts = dateStr.split("-");
-            if (parts.length === 3) {
-              return new Date(
-                parseInt(parts[0]),
-                parseInt(parts[1]) - 1,
-                parseInt(parts[2]),
-              );
-            }
-          } else if (dateStr.includes("/")) {
-            parts = dateStr.split("/");
-            if (parts.length === 3) {
-              return new Date(
-                parseInt(parts[2]),
-                parseInt(parts[0]) - 1,
-                parseInt(parts[1]),
-              );
-            }
-          }
-          return null;
+  const fetchSummary = useCallback(
+    async (options?: { background?: boolean }) => {
+      if (!schoolId) return;
+      if (!options?.background) setSummaryLoading(true);
+      setError(null);
+      try {
+        const summary = await db.getDashboardSummary(schoolId);
+        const nextStats = {
+          students: summary.studentsCount,
+          teachers: summary.teachersCount,
+          classes: CLASSES_LIST.length,
+          maleStudents: 0,
+          femaleStudents: 0,
+          classAttendance: [] as {
+            className: string;
+            percentage: number;
+            id: string;
+          }[],
         };
-        const reopenDateObjLocal = parseLocalDate(config.schoolReopenDate);
-        const vacationDateObjLocal = parseLocalDate(config.vacationDate);
 
-        let currentCheckDate = new Date();
-        for (let i = 0; i < maxDaysBack; i++) {
-          // Find next previous weekday
-          let checkDate = new Date(currentCheckDate);
-          let dayOfWeek = checkDate.getDay();
-          do {
-            checkDate.setDate(checkDate.getDate() - 1);
-            dayOfWeek = checkDate.getDay();
-            const isVacationDay =
-              vacationDateObjLocal &&
-              checkDate.toDateString() === vacationDateObjLocal.toDateString();
-            if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
-              continue;
-            } else {
-              break;
-            }
-          } while (true);
-
-          const checkDayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
-          const checkDayTime = checkDate.getTime();
-          const reopenTime = reopenDateObjLocal
-            ? reopenDateObjLocal.getTime()
-            : 0;
-          const isDuringVacationCheck =
-            vacationDateObjLocal &&
-            nextTermBeginsObj &&
-            checkDate >= vacationDateObjLocal &&
-            checkDate < nextTermBeginsObj;
-
-          if (
-            checkDayTime >= reopenTime &&
-            reopenTime > 0 &&
-            !isDuringVacationCheck
-          ) {
-            for (const teacher of teachers.filter(
-              (t) => t.role === UserRole.TEACHER,
-            )) {
-              const attendanceRecord = await db.getTeacherAttendance(
-                schoolId,
-                teacher.id,
-                checkDayStr,
-              );
-              if (!attendanceRecord) {
-                missedAlerts.push({
-                  teacherId: teacher.id,
-                  teacherName: teacher.fullName,
-                  date: checkDayStr,
-                  classes:
-                    teacher.assignedClassIds
-                      ?.map((id) => CLASSES_LIST.find((c) => c.id === id)?.name)
-                      .join(", ") || "Not Assigned",
-                });
-              }
-            }
-          } else {
-            // If this day is before reopen or during vacation, stop checking further back
-            break;
-          }
-          currentCheckDate = checkDate;
-        }
-      }
-
-      // Check for missed STUDENT attendance on recent school days
-      const missedStudentAlerts: any[] = [];
-
-      if (schoolHasReopened && !isOnVacation) {
-        // Parse dates
-        const parseLocalDate = (dateStr: string): Date | null => {
-          if (!dateStr) return null;
-          let parts: string[] = [];
-          if (dateStr.includes("-")) {
-            parts = dateStr.split("-");
-            if (parts.length === 3) {
-              return new Date(
-                parseInt(parts[0]),
-                parseInt(parts[1]) - 1,
-                parseInt(parts[2]),
-              );
-            }
-          } else if (dateStr.includes("/")) {
-            parts = dateStr.split("/");
-            if (parts.length === 3) {
-              return new Date(
-                parseInt(parts[2]),
-                parseInt(parts[0]) - 1,
-                parseInt(parts[1]),
-              );
-            }
-          }
-          return null;
-        };
-        const reopenDateObjLocal = parseLocalDate(config.schoolReopenDate);
-        const vacationDateObjLocal = parseLocalDate(config.vacationDate);
-
-        let currentCheckDate = new Date();
-        for (let i = 0; i < maxDaysBack; i++) {
-          // Find next previous weekday
-          let checkDate = new Date(currentCheckDate);
-          let dayOfWeek = checkDate.getDay();
-          do {
-            checkDate.setDate(checkDate.getDate() - 1);
-            dayOfWeek = checkDate.getDay();
-            const isVacationDay =
-              vacationDateObjLocal &&
-              checkDate.toDateString() === vacationDateObjLocal.toDateString();
-            if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
-              continue;
-            } else {
-              break;
-            }
-          } while (true);
-
-          const checkDayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
-          const checkDayTime = checkDate.getTime();
-          const reopenTime = reopenDateObjLocal
-            ? reopenDateObjLocal.getTime()
-            : 0;
-          const isDuringVacationCheck =
-            vacationDateObjLocal &&
-            nextTermBeginsObj &&
-            checkDate >= vacationDateObjLocal &&
-            checkDate < nextTermBeginsObj;
-
-          if (
-            checkDayTime >= reopenTime &&
-            reopenTime > 0 &&
-            !isDuringVacationCheck
-          ) {
-            for (const teacher of teachers.filter(
-              (t) =>
-                t.role === UserRole.TEACHER &&
-                t.assignedClassIds &&
-                t.assignedClassIds.length > 0,
-            )) {
-              const classId = teacher.assignedClassIds![0];
-              const className =
-                CLASSES_LIST.find((c) => c.id === classId)?.name ||
-                "Unknown Class";
-              const studentAttendanceRecord = await db.getAttendance(
-                schoolId,
-                classId,
-                checkDayStr,
-              );
-              if (!studentAttendanceRecord) {
-                missedStudentAlerts.push({
-                  teacherId: teacher.id,
-                  teacherName: teacher.fullName,
-                  date: checkDayStr,
-                  className: className,
-                });
-              }
-            }
-          } else {
-            // If this day is before reopen or during vacation, stop checking further back
-            break;
-          }
-          currentCheckDate = checkDate;
-        }
-      }
-
-      // Helper function to count weekdays between two dates (inclusive)
-      const countWeekdays = (startDate: string, endDate: string): number => {
-        if (!startDate || !endDate) return 0;
-        const start = new Date(startDate + "T00:00:00");
-        const end = new Date(endDate + "T00:00:00");
-        let count = 0;
-        const current = new Date(start);
-        while (current <= end) {
-          const dayOfWeek = current.getDay();
-          if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-            // Not Sunday or Saturday
-            count++;
-          }
-          current.setDate(current.getDate() + 1);
-        }
-        return count;
-      };
-
-      // Calculate total possible school days in the term
-      const totalPossibleDays = countWeekdays(
-        config.schoolReopenDate,
-        config.vacationDate,
-      );
-
-      // Calculate term statistics for each teacher (only from school reopen date to vacation date)
-      const teacherTermStats = teachers
-        .filter((t) => t.role === UserRole.TEACHER)
-        .map((teacher) => {
-          const teacherRecords = allTeacherRecords.filter(
-            (r) =>
-              r.teacherId === teacher.id &&
-              r.date >= (config.schoolReopenDate || "") &&
-              r.date <= (config.vacationDate || "9999-99-99"),
+        setStats((prev) => ({
+          ...prev,
+          students: nextStats.students,
+          teachers: nextStats.teachers,
+          classes: nextStats.classes,
+        }));
+        setDashboardStatsCache((prev) => ({
+          ...(prev || nextStats),
+          students: nextStats.students,
+          teachers: nextStats.teachers,
+          classes: nextStats.classes,
+        }));
+        if (summaryCacheKey) {
+          localStorage.setItem(
+            summaryCacheKey,
+            JSON.stringify({
+              ...nextStats,
+              updatedAt: Date.now(),
+            }),
           );
-          const presentDays = teacherRecords.filter(
-            (r) => r.status === "present",
-          ).length;
-          const totalDays = totalPossibleDays; // Total possible school days in the term
-          const attendanceRate =
-            totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+        }
+      } catch (err) {
+        console.error("Summary fetch error:", err);
+      } finally {
+        if (!options?.background) setSummaryLoading(false);
+      }
+    },
+    [schoolId, summaryCacheKey],
+  );
 
-          return {
-            id: teacher.id,
-            name: teacher.fullName,
-            classes:
-              teacher.assignedClassIds
-                ?.map((id) => CLASSES_LIST.find((c) => c.id === id)?.name)
-                .join(", ") || "Not Assigned",
-            presentDays,
-            totalDays,
-            attendanceRate,
+  const fetchHeavyData = useCallback(
+    async (options?: { background?: boolean }) => {
+      if (!schoolId) return;
+      if (!options?.background) setHeavyLoading(true);
+      setError(null);
+      try {
+        const localToday = new Date();
+        const today = `${localToday.getFullYear()}-${String(localToday.getMonth() + 1).padStart(2, "0")}-${String(localToday.getDate()).padStart(2, "0")}`;
+
+        const [
+          dashboardStats,
+          students,
+          fetchedNotices,
+          config,
+          teachers,
+          teacherAttendanceData,
+          allTeacherRecords,
+        ] = await Promise.all([
+          db.getDashboardStats(schoolId),
+          db.getStudents(schoolId),
+          db.getNotices(schoolId),
+          db.getSchoolConfig(schoolId),
+          db.getUsers(schoolId),
+          db.getAllTeacherAttendance(schoolId, today),
+          db.getAllTeacherAttendanceRecords(schoolId),
+        ]);
+
+        // Check for missed attendance on recent school days (weekdays)
+        const missedAlerts: any[] = [];
+
+        // Only check if school has reopened and there are attendance records in the database
+        const currentDate = new Date();
+        const reopenDateObj = config.schoolReopenDate
+          ? new Date(config.schoolReopenDate + "T00:00:00")
+          : null;
+        const schoolHasReopened =
+          !reopenDateObj || currentDate >= reopenDateObj;
+        const vacationDateObj = config.vacationDate
+          ? new Date(config.vacationDate + "T00:00:00")
+          : null;
+        if (vacationDateObj) vacationDateObj.setHours(0, 0, 0, 0);
+        const nextTermBeginsObj = config.nextTermBegins
+          ? new Date(config.nextTermBegins + "T00:00:00")
+          : null;
+        currentDate.setHours(0, 0, 0, 0);
+        const isOnVacation =
+          vacationDateObj &&
+          nextTermBeginsObj &&
+          currentDate >= vacationDateObj &&
+          currentDate < nextTermBeginsObj;
+
+        const maxDaysBack = 5; // Check up to 5 previous school days for missed attendance
+
+        const holidayDates = new Set([
+          ...allTeacherRecords.filter((r) => r.isHoliday).map((r) => r.date),
+          ...(config.holidayDates || []).map((h) => h.date),
+        ]);
+
+        if (
+          schoolHasReopened &&
+          !isOnVacation &&
+          allTeacherRecords.length > 0
+        ) {
+          // Parse dates
+          const parseLocalDate = (dateStr: string): Date | null => {
+            if (!dateStr) return null;
+            let parts: string[] = [];
+            if (dateStr.includes("-")) {
+              parts = dateStr.split("-");
+              if (parts.length === 3) {
+                return new Date(
+                  parseInt(parts[0]),
+                  parseInt(parts[1]) - 1,
+                  parseInt(parts[2]),
+                );
+              }
+            } else if (dateStr.includes("/")) {
+              parts = dateStr.split("/");
+              if (parts.length === 3) {
+                return new Date(
+                  parseInt(parts[2]),
+                  parseInt(parts[0]) - 1,
+                  parseInt(parts[1]),
+                );
+              }
+            }
+            return null;
           };
+          const reopenDateObjLocal = parseLocalDate(config.schoolReopenDate);
+          const vacationDateObjLocal = parseLocalDate(config.vacationDate);
+
+          let currentCheckDate = new Date();
+          for (let i = 0; i < maxDaysBack; i++) {
+            // Find next previous weekday
+            let checkDate = new Date(currentCheckDate);
+            let dayOfWeek = checkDate.getDay();
+            do {
+              checkDate.setDate(checkDate.getDate() - 1);
+              dayOfWeek = checkDate.getDay();
+              const isVacationDay =
+                vacationDateObjLocal &&
+                checkDate.toDateString() ===
+                  vacationDateObjLocal.toDateString();
+              if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
+                continue;
+              } else {
+                break;
+              }
+            } while (true);
+
+            const checkDayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
+            const checkDayTime = checkDate.getTime();
+            const reopenTime = reopenDateObjLocal
+              ? reopenDateObjLocal.getTime()
+              : 0;
+            const isDuringVacationCheck =
+              vacationDateObjLocal &&
+              nextTermBeginsObj &&
+              checkDate >= vacationDateObjLocal &&
+              checkDate < nextTermBeginsObj;
+
+            if (
+              checkDayTime >= reopenTime &&
+              reopenTime > 0 &&
+              !isDuringVacationCheck &&
+              !holidayDates.has(checkDayStr)
+            ) {
+              for (const teacher of teachers.filter(
+                (t) => t.role === UserRole.TEACHER,
+              )) {
+                const attendanceRecord = await db.getTeacherAttendance(
+                  schoolId,
+                  teacher.id,
+                  checkDayStr,
+                );
+                if (!attendanceRecord || attendanceRecord.isHoliday) {
+                  missedAlerts.push({
+                    teacherId: teacher.id,
+                    teacherName: teacher.fullName,
+                    date: checkDayStr,
+                    classes:
+                      teacher.assignedClassIds
+                        ?.map(
+                          (id) => CLASSES_LIST.find((c) => c.id === id)?.name,
+                        )
+                        .join(", ") || "Not Assigned",
+                  });
+                }
+              }
+            } else {
+              // If this day is before reopen or during vacation, stop checking further back
+              break;
+            }
+            currentCheckDate = checkDate;
+          }
+        }
+
+        // Check for missed STUDENT attendance on recent school days
+        const missedStudentAlerts: any[] = [];
+
+        if (schoolHasReopened && !isOnVacation) {
+          // Parse dates
+          const parseLocalDate = (dateStr: string): Date | null => {
+            if (!dateStr) return null;
+            let parts: string[] = [];
+            if (dateStr.includes("-")) {
+              parts = dateStr.split("-");
+              if (parts.length === 3) {
+                return new Date(
+                  parseInt(parts[0]),
+                  parseInt(parts[1]) - 1,
+                  parseInt(parts[2]),
+                );
+              }
+            } else if (dateStr.includes("/")) {
+              parts = dateStr.split("/");
+              if (parts.length === 3) {
+                return new Date(
+                  parseInt(parts[2]),
+                  parseInt(parts[0]) - 1,
+                  parseInt(parts[1]),
+                );
+              }
+            }
+            return null;
+          };
+          const reopenDateObjLocal = parseLocalDate(config.schoolReopenDate);
+          const vacationDateObjLocal = parseLocalDate(config.vacationDate);
+
+          let currentCheckDate = new Date();
+          for (let i = 0; i < maxDaysBack; i++) {
+            // Find next previous weekday
+            let checkDate = new Date(currentCheckDate);
+            let dayOfWeek = checkDate.getDay();
+            do {
+              checkDate.setDate(checkDate.getDate() - 1);
+              dayOfWeek = checkDate.getDay();
+              const isVacationDay =
+                vacationDateObjLocal &&
+                checkDate.toDateString() ===
+                  vacationDateObjLocal.toDateString();
+              if (dayOfWeek === 0 || dayOfWeek === 6 || isVacationDay) {
+                continue;
+              } else {
+                break;
+              }
+            } while (true);
+
+            const checkDayStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
+            const checkDayTime = checkDate.getTime();
+            const reopenTime = reopenDateObjLocal
+              ? reopenDateObjLocal.getTime()
+              : 0;
+            const isDuringVacationCheck =
+              vacationDateObjLocal &&
+              nextTermBeginsObj &&
+              checkDate >= vacationDateObjLocal &&
+              checkDate < nextTermBeginsObj;
+
+            const holidayRecords = await db.getAttendanceByDate(
+              schoolId,
+              checkDayStr,
+            );
+            const isHolidayDate =
+              holidayRecords.some((r) => r.isHoliday) ||
+              (config.holidayDates || []).some((h) => h.date === checkDayStr);
+
+            if (
+              checkDayTime >= reopenTime &&
+              reopenTime > 0 &&
+              !isDuringVacationCheck &&
+              !isHolidayDate
+            ) {
+              for (const teacher of teachers.filter(
+                (t) =>
+                  t.role === UserRole.TEACHER &&
+                  t.assignedClassIds &&
+                  t.assignedClassIds.length > 0,
+              )) {
+                const classId = teacher.assignedClassIds![0];
+                const className =
+                  CLASSES_LIST.find((c) => c.id === classId)?.name ||
+                  "Unknown Class";
+                const studentAttendanceRecord = await db.getAttendance(
+                  schoolId,
+                  classId,
+                  checkDayStr,
+                );
+                if (
+                  !studentAttendanceRecord ||
+                  studentAttendanceRecord.isHoliday
+                ) {
+                  missedStudentAlerts.push({
+                    teacherId: teacher.id,
+                    teacherName: teacher.fullName,
+                    date: checkDayStr,
+                    className: className,
+                  });
+                }
+              }
+            } else {
+              // If this day is before reopen or during vacation, stop checking further back
+              break;
+            }
+            currentCheckDate = checkDate;
+          }
+        }
+
+        // Helper function to count weekdays between two dates (inclusive)
+        const countWeekdays = (startDate: string, endDate: string): number => {
+          if (!startDate || !endDate) return 0;
+          const start = new Date(startDate + "T00:00:00");
+          const end = new Date(endDate + "T00:00:00");
+          let count = 0;
+          const current = new Date(start);
+          while (current <= end) {
+            const dayOfWeek = current.getDay();
+            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+              // Not Sunday or Saturday
+              count++;
+            }
+            current.setDate(current.getDate() + 1);
+          }
+          return count;
+        };
+
+        // Calculate total possible school days in the term
+        const teacherHolidayDates = new Set([
+          ...allTeacherRecords.filter((r) => r.isHoliday).map((r) => r.date),
+          ...(config.holidayDates || []).map((h) => h.date),
+        ]);
+        const totalPossibleDays = countWeekdays(
+          config.schoolReopenDate,
+          config.vacationDate,
+        );
+        const totalPossibleDaysWithoutHolidays = Math.max(
+          0,
+          totalPossibleDays - teacherHolidayDates.size,
+        );
+
+        // Calculate term statistics for each teacher (only from school reopen date to vacation date)
+        const teacherTermStats = teachers
+          .filter((t) => t.role === UserRole.TEACHER)
+          .map((teacher) => {
+            const teacherRecords = allTeacherRecords.filter(
+              (r) =>
+                r.teacherId === teacher.id &&
+                r.date >= (config.schoolReopenDate || "") &&
+                r.date <= (config.vacationDate || "9999-99-99") &&
+                !r.isHoliday,
+            );
+            const presentDays = teacherRecords.filter(
+              (r) => r.status === "present",
+            ).length;
+            const totalDays = totalPossibleDaysWithoutHolidays; // Total possible school days in the term
+            const attendanceRate =
+              totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+            return {
+              id: teacher.id,
+              name: teacher.fullName,
+              classes:
+                teacher.assignedClassIds
+                  ?.map((id) => CLASSES_LIST.find((c) => c.id === id)?.name)
+                  .join(", ") || "Not Assigned",
+              presentDays,
+              totalDays,
+              attendanceRate,
+            };
+          });
+
+        // Map today's attendance records to include teacher names and classes
+        const teacherAttendanceWithDetails = teacherAttendanceData.map(
+          (record) => {
+            const teacher = teachers.find((t) => t.id === record.teacherId);
+            return {
+              ...record,
+              teacherName: teacher?.fullName || "Unknown",
+              teacherClasses:
+                teacher?.assignedClassIds
+                  ?.map((id) => CLASSES_LIST.find((c) => c.id === id)?.name)
+                  .join(", ") || "Not Assigned",
+            };
+          },
+        ) as any[];
+
+        setSchoolConfig((prev) => ({
+          ...prev,
+          academicYear: config.academicYear,
+          currentTerm: config.currentTerm,
+          schoolReopenDate: config.schoolReopenDate || "",
+        }));
+
+        // Check for automatic term transition
+        if (
+          config.nextTermBegins &&
+          new Date() >= new Date(config.nextTermBegins + "T00:00:00") &&
+          !config.termTransitionProcessed
+        ) {
+          try {
+            await db.resetForNewTerm(config);
+            showToast("Term transition completed automatically.", {
+              type: "success",
+            });
+            // Refetch data after transition
+            setTimeout(() => fetchHeavyData({ background: true }), 1000);
+          } catch (error) {
+            console.error("Auto term transition failed:", error);
+            showToast("Auto term transition failed. Please check settings.", {
+              type: "error",
+            });
+          }
+        }
+
+        // Use Dynamic Term Number from config string (e.g. "Term 2" -> 2)
+        // Fallback to CURRENT_TERM constant if parsing fails
+        let dynamicTerm = CURRENT_TERM;
+        if (config.currentTerm) {
+          const match = config.currentTerm.match(/\d+/);
+          if (match) dynamicTerm = parseInt(match[0]);
+        }
+
+        // Performance Calculations
+        const allAssessments = await db.getAllAssessments(schoolId);
+
+        // 1. Group by Student
+        const studentScores: Record<
+          string,
+          { total: number; count: number; name: string; classId: string }
+        > = {};
+
+        // Map ID to Name for easier lookup
+        const studentMap = new Map(students.map((s) => [s.id, s]));
+
+        allAssessments.forEach((a) => {
+          // Filter using the DYNAMIC term
+          if (a.term === (dynamicTerm as any) && studentMap.has(a.studentId)) {
+            if (!studentScores[a.studentId]) {
+              const s = studentMap.get(a.studentId)!;
+              studentScores[a.studentId] = {
+                total: 0,
+                count: 0,
+                name: s.name,
+                classId: s.classId,
+              };
+            }
+            const score = a.total ?? calculateTotalScore(a);
+            studentScores[a.studentId].total += score;
+            studentScores[a.studentId].count += 1;
+          }
         });
 
-      // Map today's attendance records to include teacher names and classes
-      const teacherAttendanceWithDetails = teacherAttendanceData.map(
-        (record) => {
-          const teacher = teachers.find((t) => t.id === record.teacherId);
-          return {
-            ...record,
-            teacherName: teacher?.fullName || "Unknown",
-            teacherClasses:
-              teacher?.assignedClassIds
-                ?.map((id) => CLASSES_LIST.find((c) => c.id === id)?.name)
-                .join(", ") || "Not Assigned",
-          };
-        },
-      ) as any[];
+        // 2. Calculate Averages & Grade Distribution (also build buckets)
+        const counts = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+        const averagesList: {
+          id: string;
+          name: string;
+          class: string;
+          avg: number;
+        }[] = [];
+        const buckets: Record<
+          string,
+          { id: string; name: string; class: string; avg: number }[]
+        > = { A: [], B: [], C: [], D: [], F: [] };
 
-      setSchoolConfig((prev) => ({
-        ...prev,
-        academicYear: config.academicYear,
-        currentTerm: config.currentTerm,
-        schoolReopenDate: config.schoolReopenDate || "",
-      }));
-
-      // Check for automatic term transition
-      if (
-        config.nextTermBegins &&
-        new Date() >= new Date(config.nextTermBegins + "T00:00:00") &&
-        !config.termTransitionProcessed
-      ) {
-        try {
-          await db.resetForNewTerm(config);
-          showToast("Term transition completed automatically.", {
-            type: "success",
-          });
-          // Refetch data after transition
-          setTimeout(() => fetchData(), 1000);
-        } catch (error) {
-          console.error("Auto term transition failed:", error);
-          showToast("Auto term transition failed. Please check settings.", {
-            type: "error",
-          });
-        }
-      }
-
-      // Use Dynamic Term Number from config string (e.g. "Term 2" -> 2)
-      // Fallback to CURRENT_TERM constant if parsing fails
-      let dynamicTerm = CURRENT_TERM;
-      if (config.currentTerm) {
-        const match = config.currentTerm.match(/\d+/);
-        if (match) dynamicTerm = parseInt(match[0]);
-      }
-
-      // Performance Calculations
-      const allAssessments = await db.getAllAssessments(schoolId);
-
-      // 1. Group by Student
-      const studentScores: Record<
-        string,
-        { total: number; count: number; name: string; classId: string }
-      > = {};
-
-      // Map ID to Name for easier lookup
-      const studentMap = new Map(students.map((s) => [s.id, s]));
-
-      allAssessments.forEach((a) => {
-        // Filter using the DYNAMIC term
-        if (a.term === (dynamicTerm as any) && studentMap.has(a.studentId)) {
-          if (!studentScores[a.studentId]) {
-            const s = studentMap.get(a.studentId)!;
-            studentScores[a.studentId] = {
-              total: 0,
-              count: 0,
-              name: s.name,
-              classId: s.classId,
-            };
+        Object.entries(studentScores).forEach(([studentId, s]) => {
+          const avg = s.count > 0 ? s.total / s.count : 0;
+          const { grade } = calculateGrade(avg);
+          if (counts[grade as keyof typeof counts] !== undefined) {
+            counts[grade as keyof typeof counts]++;
           }
-          const score = a.total ?? calculateTotalScore(a);
-          studentScores[a.studentId].total += score;
-          studentScores[a.studentId].count += 1;
-        }
-      });
+          const record = {
+            id: studentId,
+            name: s.name,
+            class: CLASSES_LIST.find((c) => c.id === s.classId)?.name || "N/A",
+            avg: parseFloat(avg.toFixed(1)),
+          };
+          averagesList.push(record);
+          if (buckets[grade]) buckets[grade].push(record);
+        });
 
-      // 2. Calculate Averages & Grade Distribution (also build buckets)
-      const counts = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-      const averagesList: {
-        id: string;
-        name: string;
-        class: string;
-        avg: number;
-      }[] = [];
-      const buckets: Record<
-        string,
-        { id: string; name: string; class: string; avg: number }[]
-      > = { A: [], B: [], C: [], D: [], F: [] };
+        // 3. Sort for Top Students
+        averagesList.sort((a, b) => b.avg - a.avg);
 
-      Object.entries(studentScores).forEach(([studentId, s]) => {
-        const avg = s.count > 0 ? s.total / s.count : 0;
-        const { grade } = calculateGrade(avg);
-        if (counts[grade as keyof typeof counts] !== undefined) {
-          counts[grade as keyof typeof counts]++;
-        }
-        const record = {
-          id: studentId,
-          name: s.name,
-          class: CLASSES_LIST.find((c) => c.id === s.classId)?.name || "N/A",
-          avg: parseFloat(avg.toFixed(1)),
+        const fullStats = {
+          students: dashboardStats.studentsCount,
+          teachers: dashboardStats.teachersCount,
+          classes: CLASSES_LIST.length,
+          maleStudents: dashboardStats.gender.male,
+          femaleStudents: dashboardStats.gender.female,
+          classAttendance: dashboardStats.classAttendance,
         };
-        averagesList.push(record);
-        if (buckets[grade]) buckets[grade].push(record);
-      });
+        setStats(fullStats);
+        setDashboardStatsCache(fullStats);
+        if (summaryCacheKey) {
+          localStorage.setItem(
+            summaryCacheKey,
+            JSON.stringify({ ...fullStats, updatedAt: Date.now() }),
+          );
+        }
+        setNotices(fetchedNotices);
+        setRecentStudents(students.slice(-5).reverse());
+        setTeacherAttendance(teacherAttendanceWithDetails);
+        setTeacherTermStats(teacherTermStats);
+        setMissedAttendanceAlerts(missedAlerts);
+        setMissedStudentAttendanceAlerts(missedStudentAlerts);
 
-      // 3. Sort for Top Students
-      averagesList.sort((a, b) => b.avg - a.avg);
+        setGradeDistribution(counts);
+        setTopStudents(averagesList.slice(0, 5));
+        setGradeBuckets(buckets);
+        setLastUpdated(new Date());
+        setInitialDataReady(true);
+      } catch (err: any) {
+        console.error("Dashboard fetch error:", err);
+        setError(
+          "Failed to load dashboard data. Please check your internet connection or database permissions.",
+        );
+      } finally {
+        if (!options?.background) setHeavyLoading(false);
+      }
+    },
+    [schoolId, summaryCacheKey],
+  );
 
-      setStats({
-        students: dashboardStats.studentsCount,
-        teachers: dashboardStats.teachersCount,
-        classes: CLASSES_LIST.length,
-        maleStudents: dashboardStats.gender.male,
-        femaleStudents: dashboardStats.gender.female,
-        classAttendance: dashboardStats.classAttendance,
-      });
-      setNotices(fetchedNotices);
-      setRecentStudents(students.slice(-5).reverse());
-      setTeacherAttendance(teacherAttendanceWithDetails);
-      setTeacherTermStats(teacherTermStats);
-      setMissedAttendanceAlerts(missedAlerts);
-      setMissedStudentAttendanceAlerts(missedStudentAlerts);
-
-      setGradeDistribution(counts);
-      setTopStudents(averagesList.slice(0, 5));
-      setGradeBuckets(buckets);
-      setLastUpdated(new Date());
-    } catch (err: any) {
-      console.error("Dashboard fetch error:", err);
-      setError(
-        "Failed to load dashboard data. Please check your internet connection or database permissions.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  const refreshDashboard = useCallback(async () => {
+    if (!schoolId) return;
+    setIsRefreshing(true);
+    await Promise.all([
+      fetchSummary({ background: true }),
+      fetchHeavyData({ background: true }),
+    ]);
+    setIsRefreshing(false);
+  }, [fetchSummary, fetchHeavyData, schoolId]);
 
   // Lightweight stats fetch used by the live updater
   const fetchStats = async () => {
@@ -598,17 +784,33 @@ const AdminDashboard = () => {
         femaleStudents: dashboardStats.gender.female,
         classAttendance: dashboardStats.classAttendance,
       }));
+      if (summaryCacheKey) {
+        localStorage.setItem(
+          summaryCacheKey,
+          JSON.stringify({
+            students: dashboardStats.studentsCount,
+            teachers: dashboardStats.teachersCount,
+            classes: CLASSES_LIST.length,
+            maleStudents: dashboardStats.gender.male,
+            femaleStudents: dashboardStats.gender.female,
+            classAttendance: dashboardStats.classAttendance,
+            updatedAt: Date.now(),
+          }),
+        );
+      }
       // animate KPI targets
       setLastUpdated(new Date());
+      setInitialDataReady(true);
       animateNumber(setAnimatedStudents, dashboardStats.studentsCount, 600);
       animateNumber(setAnimatedAttendance, currentAttendanceAvg, 600);
 
-      // compute grade average from assessments (best-effort, use getAllAssessments)
+      // compute grade average from a limited sample to keep live updates fast
       try {
         const all = await db.getAllAssessments(schoolId);
+        const limited = all.slice(-300);
         const studentScores: Record<string, { total: number; count: number }> =
           {};
-        all.forEach((a: any) => {
+        limited.forEach((a: any) => {
           if (!studentScores[a.studentId])
             studentScores[a.studentId] = { total: 0, count: 0 };
           const score = a.total ?? calculateTotalScore(a);
@@ -779,7 +981,7 @@ const AdminDashboard = () => {
             parseInt(parts[1]) - 1,
             parseInt(parts[2]),
           );
-          return d >= monday && d <= friday;
+          return d >= monday && d <= friday && !r.isHoliday;
         });
         const studentsInClass =
           (await db.getStudents(schoolId, cls.id)).length || 0;
@@ -818,10 +1020,35 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
-    if (!schoolLoading) {
-      fetchData();
+    if (schoolLoading || !schoolId) return;
+
+    setLoading(false);
+
+    if (summaryCacheKey) {
+      const cachedSummary = localStorage.getItem(summaryCacheKey);
+      if (cachedSummary) {
+        try {
+          const parsed = JSON.parse(cachedSummary);
+          setStats((prev) => ({
+            ...prev,
+            students: parsed.students ?? prev.students,
+            teachers: parsed.teachers ?? prev.teachers,
+            classes: parsed.classes ?? prev.classes,
+            maleStudents: parsed.maleStudents ?? prev.maleStudents,
+            femaleStudents: parsed.femaleStudents ?? prev.femaleStudents,
+            classAttendance: parsed.classAttendance ?? prev.classAttendance,
+          }));
+          setDashboardStatsCache(parsed);
+        } catch (e) {
+          console.warn("Failed to parse cached dashboard summary", e);
+          localStorage.removeItem(summaryCacheKey);
+        }
+      }
     }
-  }, [schoolLoading, schoolId]);
+
+    fetchSummary().catch((e) => console.error(e));
+    fetchHeavyData().catch((e) => console.error(e));
+  }, [schoolLoading, schoolId, fetchSummary, fetchHeavyData, summaryCacheKey]);
 
   // Real-time listeners: refresh stats when attendance, assessments, or config change
   useEffect(() => {
@@ -846,14 +1073,14 @@ const AdminDashboard = () => {
       );
     });
     const unsubAssessments = onSnapshot(assessmentsRef, () => {
-      // Refresh all data when assessments change to update performance stats
-      fetchData().catch((e) =>
-        console.error("Error refreshing data on assessments change", e),
+      // Keep this lightweight to avoid full dashboard refetch on every update
+      fetchStats().catch((e) =>
+        console.error("Error refreshing stats on assessments change", e),
       );
     });
     const unsubTeacherAttendance = onSnapshot(teacherAttendanceRef, () => {
-      fetchData().catch((e) =>
-        console.error("Error refreshing data on teacher attendance change", e),
+      fetchStats().catch((e) =>
+        console.error("Error refreshing stats on teacher attendance change", e),
       );
     });
     const unsubConfig = onSnapshot(configRef, (docSnap) => {
@@ -978,7 +1205,7 @@ const AdminDashboard = () => {
       await db.updateStudent(updated);
 
       // Refresh Data
-      fetchData();
+      refreshDashboard();
       setEditingStudent(null);
     } catch (e) {
       showToast("Failed to update student", { type: "error" });
@@ -1463,14 +1690,14 @@ const AdminDashboard = () => {
               </div>
             </div>
             <button
-              onClick={fetchData}
-              disabled={loading}
+              onClick={refreshDashboard}
+              disabled={isRefreshing}
               className="flex items-center px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
               title="Refresh performance data"
             >
               <RefreshCw
                 size={14}
-                className={`mr-1 ${loading ? "animate-spin" : ""}`}
+                className={`mr-1 ${isRefreshing ? "animate-spin" : ""}`}
               />
               Refresh
             </button>
@@ -1628,37 +1855,7 @@ const AdminDashboard = () => {
     );
   };
 
-  if (loading) {
-    return (
-      <Layout title="Dashboard">
-        <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)]">
-          <div className="relative">
-            {/* Outer glow */}
-            <div className="absolute inset-0 bg-amber-100 rounded-full blur-xl opacity-50 animate-pulse"></div>
-
-            {/* Spinner */}
-            <div className="relative w-16 h-16 border-4 border-slate-100 border-t-[#0B4A82] rounded-full animate-spin shadow-sm"></div>
-
-            {/* Inner Icon */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-2 h-2 bg-[#0B4A82] rounded-full"></div>
-            </div>
-          </div>
-
-          <div className="mt-8 text-center space-y-2">
-            <h3 className="text-lg font-bold text-slate-800">
-              School Manager GH
-            </h3>
-            <div className="flex items-center justify-center space-x-1">
-              <div className="w-2 h-2 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-              <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-              <div className="w-2 h-2 bg-[#0B4A82] rounded-full animate-bounce"></div>
-            </div>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
+  const showSkeletons = summaryLoading || !initialDataReady;
 
   // --- Advanced Visualization Components ---
   const scoreToColor = (v: number) => {
@@ -1877,7 +2074,7 @@ const AdminDashboard = () => {
           </h3>
           <p className="text-slate-500 text-center max-w-md mb-6">{error}</p>
           <button
-            onClick={fetchData}
+            onClick={refreshDashboard}
             className="flex items-center px-4 py-2 bg-red-800 text-white rounded-lg hover:bg-red-900 transition-colors"
           >
             <RefreshCw size={16} className="mr-2" /> Retry
@@ -1898,6 +2095,19 @@ const AdminDashboard = () => {
           <p className="text-slate-500 mt-1">
             Here is what's happening in your school today.
           </p>
+          <div className="mt-2 text-xs text-slate-500 flex items-center gap-2">
+            {isRefreshing || heavyLoading ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                Refreshing data…
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                Data up to date
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Term and Actions */}
@@ -1951,6 +2161,74 @@ const AdminDashboard = () => {
           </div>
         </div>
       </div>
+
+      {subscriptionReminder && (
+        <div className="mb-8">
+          <div
+            className={`rounded-2xl border p-6 shadow-sm ${subscriptionReminder.isOverdue ? "border-rose-200 bg-rose-50/60" : "border-amber-200 bg-amber-50/70"}`}
+          >
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${subscriptionReminder.isOverdue ? "bg-rose-500 text-white" : "bg-amber-500 text-white"}`}
+                >
+                  <Timer size={20} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                    Subscription Reminder
+                  </p>
+                  <h3 className="text-xl font-bold text-slate-900 mt-1">
+                    {subscriptionReminder.isOverdue
+                      ? "Subscription overdue"
+                      : "Subscription payment due"}
+                  </h3>
+                  <p className="text-sm text-slate-600 mt-2">
+                    Plan:{" "}
+                    <span className="font-semibold">
+                      {subscriptionReminder.planLabel}
+                    </span>{" "}
+                    • Fee:{" "}
+                    <span className="font-semibold">
+                      GHS {subscriptionReminder.planFee}
+                    </span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Started:{" "}
+                    {subscriptionReminder.createdAt.toLocaleDateString()} • Due:{" "}
+                    {subscriptionReminder.dueDate.toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div
+                  className={`px-4 py-2 rounded-full text-sm font-semibold ${subscriptionReminder.isOverdue ? "bg-rose-500 text-white" : "bg-amber-500 text-white"}`}
+                >
+                  {subscriptionReminder.isOverdue ? "Overdue" : "Time left"}
+                </div>
+                <div className="px-4 py-2 rounded-2xl bg-white border border-slate-200 text-slate-700">
+                  <div className="text-xs uppercase text-slate-400">
+                    Countdown
+                  </div>
+                  <div className="text-lg font-bold">
+                    {subscriptionReminder.days}d {subscriptionReminder.hours}h{" "}
+                    {subscriptionReminder.minutes}m{" "}
+                    {subscriptionReminder.seconds}s
+                  </div>
+                </div>
+                <Link
+                  to="/admin/billing"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B4A82] text-white rounded-lg text-sm font-medium hover:bg-[#0B4A82] transition-colors"
+                >
+                  <Wallet size={16} />
+                  Go to Billing
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Missed Attendance Alerts */}
       {missedAttendanceAlerts.length > 0 && (
@@ -2079,12 +2357,42 @@ const AdminDashboard = () => {
       )}
 
       {/* Stats Grid */}
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
+          Overview
+        </h2>
+        {(summaryLoading || isRefreshing) && <SectionLoadingBadge />}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <StudentEnrollCard />
-        <TeacherStaffCard />
+        {showSkeletons ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[140px]">
+            <SkeletonBlock className="h-4 w-32" />
+            <SkeletonBlock className="h-10 w-24 mt-4" />
+            <SkeletonBlock className="h-4 w-40 mt-4" />
+            <div className="flex gap-6 mt-4">
+              <SkeletonBlock className="h-6 w-16" />
+              <SkeletonBlock className="h-6 w-16" />
+            </div>
+          </div>
+        ) : (
+          <StudentEnrollCard />
+        )}
+        {showSkeletons ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[140px]">
+            <SkeletonBlock className="h-4 w-32" />
+            <SkeletonBlock className="h-10 w-24 mt-4" />
+            <SkeletonBlock className="h-4 w-40 mt-4" />
+            <div className="flex gap-6 mt-4">
+              <SkeletonBlock className="h-6 w-16" />
+              <SkeletonBlock className="h-6 w-16" />
+            </div>
+          </div>
+        ) : (
+          <TeacherStaffCard />
+        )}
         <StatCard
           title="Notices"
-          value={notices.length}
+          value={showSkeletons ? "—" : notices.length}
           subtext="Active Announcements"
           icon={Bell}
           colorClass="bg-[#E6F0FA]"
@@ -2094,27 +2402,81 @@ const AdminDashboard = () => {
 
       {/* KPI row placed below the main stats so the three-card grid remains intact */}
       <div className="mb-8">
-        <KPIRowContainer />
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
+            Live KPIs
+          </h2>
+          {(summaryLoading || isRefreshing) && <SectionLoadingBadge />}
+        </div>
+        {showSkeletons ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="bg-slate-50 p-4 rounded-2xl border border-slate-100"
+                >
+                  <SkeletonBlock className="h-4 w-24" />
+                  <SkeletonBlock className="h-8 w-20 mt-3" />
+                  <SkeletonBlock className="h-4 w-16 mt-2" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <KPIRowContainer />
+        )}
       </div>
 
       {/* Charts Section */}
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
+          Attendance & Demographics
+        </h2>
+        {(heavyLoading || isRefreshing) && <SectionLoadingBadge />}
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
         <div className="lg:col-span-2 h-[550px]">
-          <AttendanceChart
-            data={stats.classAttendance}
-            week={attendanceWeek}
-            onPreviousWeek={goToPreviousWeek}
-            onNextWeek={goToNextWeek}
-            onCurrentWeek={goToCurrentWeek}
-            schoolReopenDate={schoolConfig.schoolReopenDate}
-          />
+          {showSkeletons ? (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-full">
+              <SkeletonBlock className="h-5 w-40" />
+              <SkeletonBlock className="h-4 w-64 mt-3" />
+              <SkeletonBlock className="h-64 mt-6" />
+            </div>
+          ) : (
+            <MemoAttendanceChart
+              data={stats.classAttendance}
+              week={attendanceWeek}
+              onPreviousWeek={goToPreviousWeek}
+              onNextWeek={goToNextWeek}
+              onCurrentWeek={goToCurrentWeek}
+              schoolReopenDate={schoolConfig.schoolReopenDate}
+            />
+          )}
         </div>
         <div className="h-96">
-          <GenderDonut />
+          {showSkeletons ? (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-full flex flex-col justify-center">
+              <SkeletonBlock className="h-5 w-32" />
+              <SkeletonBlock className="h-44 w-44 rounded-full mx-auto mt-6" />
+              <div className="flex justify-between mt-6">
+                <SkeletonBlock className="h-6 w-20" />
+                <SkeletonBlock className="h-6 w-20" />
+              </div>
+            </div>
+          ) : (
+            <GenderDonut />
+          )}
         </div>
       </div>
 
       {/* New Performance Section */}
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
+          Academic Performance
+        </h2>
+        {(heavyLoading || isRefreshing) && <SectionLoadingBadge />}
+      </div>
       <PerformanceSection />
 
       {/* Bottom Section: Recent Students & Notices */}
@@ -2126,6 +2488,7 @@ const AdminDashboard = () => {
               <h3 className="font-bold text-slate-800">New Admissions</h3>
               <p className="text-xs text-slate-500">Recently added students</p>
             </div>
+            {(heavyLoading || isRefreshing) && <SectionLoadingBadge />}
             <Link
               to="/admin/students"
               className="text-sm text-[#0B4A82] hover:text-[#0B4A82] font-medium bg-[#E6F0FA] px-3 py-1 rounded-full transition-colors"
@@ -2223,6 +2586,9 @@ const AdminDashboard = () => {
               <h3 className="font-bold text-[#E6F0FA]">Notice Board</h3>
               <p className="text-xs text-slate-300">School announcements</p>
             </div>
+            {(heavyLoading || isRefreshing) && (
+              <SectionLoadingBadge label="Refreshing" />
+            )}
             <Link
               to="/admin/settings"
               className="p-2 rounded-lg hover:bg-white/10 text-slate-300 transition-colors"
@@ -2287,6 +2653,7 @@ const AdminDashboard = () => {
                   Current day's staff presence overview
                 </p>
               </div>
+              {(heavyLoading || isRefreshing) && <SectionLoadingBadge />}
               <div className="bg-emerald-100 p-1.5 sm:p-2 rounded-full">
                 <Users className="text-emerald-600" size={16} />
               </div>
@@ -2315,9 +2682,11 @@ const AdminDashboard = () => {
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <div
                             className={`w-3.5 h-3.5 rounded-full flex-shrink-0 ${
-                              record.status === "present"
-                                ? "bg-emerald-500"
-                                : "bg-red-500"
+                              record.isHoliday
+                                ? "bg-amber-500"
+                                : record.status === "present"
+                                  ? "bg-emerald-500"
+                                  : "bg-red-500"
                             } shadow-sm`}
                           ></div>
                           <div className="flex-1 min-w-0">
@@ -2327,14 +2696,18 @@ const AdminDashboard = () => {
                               </p>
                               <span
                                 className={`px-1.5 py-0.5 rounded-full text-[9px] font-medium flex-shrink-0 ${
-                                  record.status === "present"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-red-100 text-red-700"
+                                  record.isHoliday
+                                    ? "bg-amber-100 text-amber-700"
+                                    : record.status === "present"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-red-100 text-red-700"
                                 }`}
                               >
-                                {record.status === "present"
-                                  ? "Present"
-                                  : "Absent"}
+                                {record.isHoliday
+                                  ? "Holiday"
+                                  : record.status === "present"
+                                    ? "Present"
+                                    : "Absent"}
                               </span>
                             </div>
                             <p className="text-[9px] text-slate-500 truncate">
@@ -2348,12 +2721,16 @@ const AdminDashboard = () => {
                         <div className="ml-2 flex-shrink-0">
                           <div
                             className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                              record.status === "present"
-                                ? "bg-emerald-100 text-emerald-600"
-                                : "bg-red-100 text-red-600"
+                              record.isHoliday
+                                ? "bg-amber-100 text-amber-600"
+                                : record.status === "present"
+                                  ? "bg-emerald-100 text-emerald-600"
+                                  : "bg-red-100 text-red-600"
                             }`}
                           >
-                            {record.status === "present" ? (
+                            {record.isHoliday ? (
+                              <AlertTriangle className="w-3 h-3" />
+                            ) : record.status === "present" ? (
                               <svg
                                 className="w-3 h-3"
                                 fill="currentColor"
@@ -2408,6 +2785,7 @@ const AdminDashboard = () => {
                     Term-wide staff attendance statistics
                   </p>
                 </div>
+                {(heavyLoading || isRefreshing) && <SectionLoadingBadge />}
                 <div className="bg-[#E6F0FA] p-1.5 sm:p-2 rounded-full">
                   <BarChart2 className="text-[#0B4A82]" size={16} />
                 </div>

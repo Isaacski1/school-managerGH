@@ -38,40 +38,54 @@ const AttendanceStats = () => {
         // 2. Get School Config to calculate total school days
         const config = await db.getSchoolConfig(schoolId);
 
-        // 3. Calculate total school days from reopen to vacation (inclusive)
+        // 3. Calculate total school days from reopen date up to today (or vacation date if earlier)
         let totalSchoolDays = 0;
-        if (config.schoolReopenDate && config.vacationDate) {
-          const reopen = new Date(config.schoolReopenDate);
-          const vacation = new Date(config.vacationDate);
+        const attendanceRecords = await db.getClassAttendance(
+          schoolId,
+          selectedClass,
+        );
+        const holidayDates = new Set([
+          ...attendanceRecords.filter((r) => r.isHoliday).map((r) => r.date),
+          ...(config.holidayDates || []).map((h) => h.date),
+        ]);
 
-          // Count all calendar days between dates inclusive
+        if (config.schoolReopenDate) {
+          const reopen = new Date(`${config.schoolReopenDate}T00:00:00`);
+          const vacation = config.vacationDate
+            ? new Date(`${config.vacationDate}T00:00:00`)
+            : null;
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const endDate = vacation && vacation < today ? vacation : today;
+
           const current = new Date(reopen);
-          while (current <= vacation) {
-            totalSchoolDays++;
+          while (current <= endDate) {
+            const day = current.getDay();
+            const isWeekend = day === 0 || day === 6;
+            if (!isWeekend) {
+              const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+              if (!holidayDates.has(dateKey)) {
+                totalSchoolDays++;
+              }
+            }
             current.setDate(current.getDate() + 1);
           }
         } else {
           // Fallback: count existing attendance records
-          const attendanceRecords = await db.getClassAttendance(
-            schoolId,
-            selectedClass,
-          );
-          totalSchoolDays = attendanceRecords.length;
+          const nonHoliday = attendanceRecords.filter((r) => !r.isHoliday);
+          totalSchoolDays = nonHoliday.length;
         }
 
         setTermTotalDays(totalSchoolDays);
 
         // 4. Get All Attendance Records for this class
-        const attendanceRecords = await db.getClassAttendance(
-          schoolId,
-          selectedClass,
-        );
+        const attendanceRecordsForStats = attendanceRecords;
 
         // 5. Calculate Stats for each student
         const calculatedStats = students.map((student) => {
           // Count how many records have this student's ID in 'presentStudentIds'
-          const presentCount = attendanceRecords.filter((r) =>
-            r.presentStudentIds.includes(student.id),
+          const presentCount = attendanceRecordsForStats.filter(
+            (r) => !r.isHoliday && r.presentStudentIds.includes(student.id),
           ).length;
 
           const pct =

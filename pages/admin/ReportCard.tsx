@@ -158,6 +158,11 @@ const ReportCard = () => {
       const adminRemarkData = await db.getAdminRemark(schoolId, adminRemarkId);
 
       const attendance = await db.getClassAttendance(schoolId, selectedClass);
+      const holidayDates = new Set([
+        ...attendance.filter((r) => r.isHoliday).map((r) => r.date),
+        ...(schoolConfig.holidayDates || []).map((h) => h.date),
+      ]);
+      const nonHolidayAttendance = attendance.filter((r) => !r.isHoliday);
 
       const skills = await db
         .getStudentSkills(schoolId, selectedClass)
@@ -165,30 +170,38 @@ const ReportCard = () => {
 
       const users = await db.getUsers(schoolId);
 
-      // total school days
+      // total school days (match AttendanceStats: weekdays only, from reopen to today or vacation)
       let totalSchoolDays = 0;
-      if (schoolConfig.schoolReopenDate && schoolConfig.vacationDate) {
-        const reopen = new Date(schoolConfig.schoolReopenDate);
-        const vacation = new Date(schoolConfig.vacationDate);
+      if (schoolConfig.schoolReopenDate) {
+        const reopen = new Date(`${schoolConfig.schoolReopenDate}T00:00:00`);
+        const vacation = schoolConfig.vacationDate
+          ? new Date(`${schoolConfig.vacationDate}T00:00:00`)
+          : null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const endDate = vacation && vacation < today ? vacation : today;
 
-        if (
-          isNaN(reopen.getTime()) ||
-          isNaN(vacation.getTime()) ||
-          reopen > vacation
-        ) {
-          totalSchoolDays = attendance.length;
+        if (Number.isNaN(reopen.getTime())) {
+          totalSchoolDays = nonHolidayAttendance.length;
         } else {
           const current = new Date(reopen);
-          while (current <= vacation) {
-            totalSchoolDays++;
+          while (current <= endDate) {
+            const day = current.getDay();
+            const isWeekend = day === 0 || day === 6;
+            if (!isWeekend) {
+              const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+              if (!holidayDates.has(dateKey)) {
+                totalSchoolDays++;
+              }
+            }
             current.setDate(current.getDate() + 1);
           }
         }
       } else {
-        totalSchoolDays = attendance.length;
+        totalSchoolDays = nonHolidayAttendance.length;
       }
 
-      const presentDays = attendance.filter((a) =>
+      const presentDays = nonHolidayAttendance.filter((a) =>
         a.presentStudentIds.includes(selectedStudent),
       ).length;
 

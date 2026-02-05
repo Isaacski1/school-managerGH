@@ -110,8 +110,21 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
     ) as HTMLImageElement | null;
 
     const originalLogoSrc = logoImg?.src;
+    const originalStyle = {
+      transform: element.style.transform,
+      transformOrigin: element.style.transformOrigin,
+      width: element.style.width,
+    };
 
     try {
+      const A4_WIDTH_PX = 794; // 8.27in * 96dpi
+      const A4_HEIGHT_PX = 1123; // 11.69in * 96dpi
+      element.style.width = `${A4_WIDTH_PX}px`;
+      const measuredHeight = element.scrollHeight || element.offsetHeight;
+      const scaleFactor = Math.min(1, A4_HEIGHT_PX / measuredHeight);
+      element.style.transform = `scale(${scaleFactor})`;
+      element.style.transformOrigin = "top left";
+
       // ✅ Ensure logo is base64 before export (best way to always show in PDF)
       if (logoImg?.src && !logoImg.src.startsWith("data:image")) {
         try {
@@ -125,7 +138,7 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
       await waitForImages(element);
 
       const opt: any = {
-        margin: 8,
+        margin: 0,
         filename: `${data.studentInfo.name}_Report_Card.pdf`,
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: {
@@ -136,8 +149,8 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
           logging: false,
         },
         jsPDF: {
-          unit: "mm",
-          format: "a4",
+          unit: "px",
+          format: [794, 1123],
           orientation: "portrait",
           compress: true,
         },
@@ -150,6 +163,9 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
     } finally {
       // restore original src
       if (logoImg && originalLogoSrc) logoImg.src = originalLogoSrc;
+      element.style.transform = originalStyle.transform;
+      element.style.transformOrigin = originalStyle.transformOrigin;
+      element.style.width = originalStyle.width;
       setIsGenerating(false);
     }
   };

@@ -22,7 +22,13 @@ const Attendance = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
+  const [isHoliday, setIsHoliday] = useState(false);
+  const [holidayReason, setHolidayReason] = useState("");
   const [loading, setLoading] = useState(false);
+  const [adminHoliday, setAdminHoliday] = useState<{
+    date: string;
+    reason?: string;
+  } | null>(null);
   const [message, setMessage] = useState("");
   const [schoolConfig, setSchoolConfig] = useState<any>(null);
 
@@ -81,10 +87,18 @@ const Attendance = () => {
     const vacationDate = schoolConfig?.vacationDate;
     const nextTermBegins = schoolConfig?.nextTermBegins;
     const schoolReopenDate = schoolConfig?.schoolReopenDate;
+    const isAdminHoliday = (schoolConfig?.holidayDates || []).some(
+      (h: any) => h.date === date,
+    );
 
     // If nextTermBegins is set and we're at or past that date, allow attendance (new term started)
     if (nextTermBegins && date >= nextTermBegins) {
       return false;
+    }
+
+    // Block if date is an admin-defined holiday
+    if (isAdminHoliday) {
+      return true;
     }
 
     // Block if date is after vacation date (during vacation period)
@@ -116,12 +130,34 @@ const Attendance = () => {
           selectedClassId,
           date,
         );
+        const configHoliday = (schoolConfig?.holidayDates || []).find(
+          (h: any) => h.date === date,
+        );
+        if (configHoliday) {
+          setAdminHoliday(configHoliday);
+          setIsHoliday(true);
+          setHolidayReason(configHoliday.reason || "");
+          setPresentIds(new Set());
+          return;
+        }
+
         if (existing) {
-          setPresentIds(new Set(existing.presentStudentIds));
+          if (existing.isHoliday) {
+            setIsHoliday(true);
+            setHolidayReason(existing.holidayReason || "");
+            setPresentIds(new Set());
+          } else {
+            setIsHoliday(false);
+            setHolidayReason("");
+            setPresentIds(new Set(existing.presentStudentIds));
+          }
         } else {
           // Default to empty - teacher must manually mark attendance
+          setIsHoliday(false);
+          setHolidayReason("");
           setPresentIds(new Set());
         }
+        setAdminHoliday(null);
       } catch (err) {
         console.error(err);
       } finally {
@@ -130,9 +166,10 @@ const Attendance = () => {
     };
 
     loadData();
-  }, [selectedClassId, date, schoolId]);
+  }, [selectedClassId, date, schoolId, schoolConfig]);
 
   const togglePresence = (id: string) => {
+    if (isHoliday || adminHoliday) return;
     const newSet = new Set(presentIds);
     if (newSet.has(id)) {
       newSet.delete(id);
@@ -152,6 +189,12 @@ const Attendance = () => {
     const schoolReopenDate = schoolConfig?.schoolReopenDate;
 
     // If nextTermBegins is set and we're at or past that date, allow attendance
+    if (adminHoliday) {
+      setMessage("This date is marked as a holiday by the admin.");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
     if (nextTermBegins && date >= nextTermBegins) {
       // Attendance allowed - new term has started
     } else if (vacationDate && date > vacationDate) {
@@ -170,12 +213,25 @@ const Attendance = () => {
 
     setLoading(true);
     try {
+      if (isHoliday) {
+        const existingSameDate = await db.getAttendanceByDate(schoolId, date);
+        if (existingSameDate.some((r) => r.presentStudentIds?.length)) {
+          setMessage(
+            "This date already has attendance records. Clear them before marking a holiday.",
+          );
+          setTimeout(() => setMessage(""), 4000);
+          return;
+        }
+      }
+
       await db.saveAttendance({
         id: `${schoolId}_${selectedClassId}_${date}`,
         schoolId,
         classId: selectedClassId,
         date,
-        presentStudentIds: Array.from(presentIds),
+        presentStudentIds: isHoliday ? [] : Array.from(presentIds),
+        isHoliday,
+        holidayReason: isHoliday ? holidayReason.trim() : "",
       });
 
       // Notification logic
@@ -183,12 +239,18 @@ const Attendance = () => {
         CLASSES_LIST.find((c) => c.id === selectedClassId)?.name ||
         selectedClassId;
       await db.addSystemNotification(
-        `${user?.fullName} marked attendance for ${className} on ${date}. (${presentIds.size} Present)`,
+        isHoliday
+          ? `${user?.fullName} marked ${className} as Holiday on ${date}.`
+          : `${user?.fullName} marked attendance for ${className} on ${date}. (${presentIds.size} Present)`,
         "attendance",
         schoolId,
       );
 
-      setMessage("Attendance saved successfully!");
+      setMessage(
+        isHoliday
+          ? "Holiday saved successfully!"
+          : "Attendance saved successfully!",
+      );
       setTimeout(() => setMessage(""), 3000);
     } catch (err) {
       console.error(err);
@@ -209,7 +271,7 @@ const Attendance = () => {
 
   const classNameLabel =
     CLASSES_LIST.find((c) => c.id === selectedClassId)?.name || selectedClassId;
-  const absentCount = students.length - presentIds.size;
+  const absentCount = isHoliday ? 0 : students.length - presentIds.size;
 
   return (
     <Layout title="Mark Attendance">
@@ -224,6 +286,18 @@ const Attendance = () => {
             <p className="text-sm text-slate-600">
               Mark attendance quickly and accurately for your class.
             </p>
+            {adminHoliday && (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-2 text-xs font-semibold text-amber-900 shadow-sm">
+                Admin Holiday: {adminHoliday.reason || "No reason provided"}
+              </div>
+            )}
+            {isHoliday && (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                <AlertTriangle className="h-4 w-4" />
+                {adminHoliday ? "Admin Holiday" : "Holiday / No School"}
+                {holidayReason ? `• ${holidayReason}` : ""}
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
               <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 font-medium text-slate-700 shadow-sm">
                 <Users className="h-4 w-4 text-indigo-500" />
@@ -285,6 +359,39 @@ const Attendance = () => {
               </div>
             </div>
 
+            {/* Holiday Toggle */}
+            <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+              <label className="inline-flex items-center gap-3 text-sm font-semibold text-amber-900">
+                <input
+                  type="checkbox"
+                  checked={isHoliday}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setIsHoliday(next);
+                    if (next) {
+                      setPresentIds(new Set());
+                    }
+                  }}
+                  disabled={!!adminHoliday}
+                  className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-300"
+                />
+                Mark this date as Holiday / No School
+              </label>
+              {adminHoliday ? (
+                <div className="text-xs text-amber-800">
+                  This date is locked as a holiday by the admin.
+                </div>
+              ) : isHoliday ? (
+                <input
+                  type="text"
+                  value={holidayReason}
+                  onChange={(e) => setHolidayReason(e.target.value)}
+                  placeholder="Reason (optional) e.g. Independence Day"
+                  className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                />
+              ) : null}
+            </div>
+
             {/* Stats & Save Button */}
             <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -299,11 +406,20 @@ const Attendance = () => {
               </div>
               <button
                 onClick={handleSave}
-                disabled={loading || !selectedClassId || isDateBlocked()}
+                disabled={
+                  loading ||
+                  !selectedClassId ||
+                  isDateBlocked() ||
+                  !!adminHoliday
+                }
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:scale-[1.01] hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
               >
                 <Save size={18} />
-                {loading ? "Saving..." : "Save Register"}
+                {loading
+                  ? "Saving..."
+                  : isHoliday
+                    ? "Save Holiday"
+                    : "Save Register"}
               </button>
             </div>
           </div>
@@ -317,22 +433,24 @@ const Attendance = () => {
           </div>
         )}
 
-        {isDateBlocked() && (
+        {(isDateBlocked() || adminHoliday) && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-amber-900 shadow-sm">
             <div className="flex items-center gap-2 text-amber-700">
               <AlertTriangle size={18} />
               <span className="font-medium">
-                {schoolConfig?.nextTermBegins &&
-                date >= schoolConfig.nextTermBegins
-                  ? "Attendance not available for selected date"
-                  : schoolConfig?.vacationDate &&
-                      date > schoolConfig.vacationDate
-                    ? `Cannot mark attendance after vacation date (${schoolConfig.vacationDate})`
-                    : !schoolConfig?.vacationDate &&
-                        schoolConfig?.schoolReopenDate &&
-                        date < schoolConfig.schoolReopenDate
-                      ? `Cannot mark attendance before school re-open date (${schoolConfig.schoolReopenDate})`
-                      : "Attendance not available for selected date"}
+                {adminHoliday
+                  ? `Admin marked ${adminHoliday.date} as a holiday${adminHoliday.reason ? ` (${adminHoliday.reason})` : ""}.`
+                  : schoolConfig?.nextTermBegins &&
+                      date >= schoolConfig.nextTermBegins
+                    ? "Attendance not available for selected date"
+                    : schoolConfig?.vacationDate &&
+                        date > schoolConfig.vacationDate
+                      ? `Cannot mark attendance after vacation date (${schoolConfig.vacationDate})`
+                      : !schoolConfig?.vacationDate &&
+                          schoolConfig?.schoolReopenDate &&
+                          date < schoolConfig.schoolReopenDate
+                        ? `Cannot mark attendance before school re-open date (${schoolConfig.schoolReopenDate})`
+                        : "Attendance not available for selected date"}
               </span>
             </div>
           </div>
@@ -342,7 +460,7 @@ const Attendance = () => {
         <div className="rounded-2xl border bg-white/80 p-2 shadow-sm">
           {students.map((student) => {
             const isPresent = presentIds.has(student.id);
-            const isBlocked = isDateBlocked();
+            const isBlocked = isDateBlocked() || isHoliday || !!adminHoliday;
             return (
               <div
                 key={student.id}
@@ -371,17 +489,27 @@ const Attendance = () => {
 
                 <div
                   className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-                    isPresent
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-rose-200 bg-rose-50 text-rose-700"
+                    isHoliday
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : isPresent
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-rose-200 bg-rose-50 text-rose-700"
                   }`}
                 >
-                  {isPresent ? (
+                  {isHoliday ? (
+                    <AlertTriangle className="h-4 w-4" />
+                  ) : isPresent ? (
                     <CheckCircle className="h-4 w-4" />
                   ) : (
                     <XCircle className="h-4 w-4" />
                   )}
-                  {isPresent ? "PRESENT" : "ABSENT"}
+                  {isHoliday
+                    ? adminHoliday
+                      ? "ADMIN HOLIDAY"
+                      : "HOLIDAY"
+                    : isPresent
+                      ? "PRESENT"
+                      : "ABSENT"}
                 </div>
               </div>
             );

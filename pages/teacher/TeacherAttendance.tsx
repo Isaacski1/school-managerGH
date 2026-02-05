@@ -46,6 +46,11 @@ const TeacherAttendance = () => {
   const [missedAttendanceAlert, setMissedAttendanceAlert] = useState<
     string | null
   >(null);
+  const [holidayDrafts, setHolidayDrafts] = useState<Record<string, string>>(
+    {},
+  );
+  const [holidayOpen, setHolidayOpen] = useState<Record<string, boolean>>({});
+  const [actionMessage, setActionMessage] = useState<string>("");
 
   /* =======================
      Dates
@@ -132,14 +137,18 @@ const TeacherAttendance = () => {
     reopen?: string,
     vacation?: string,
     nextTerm?: string,
+    holidayDates?: { date: string }[],
   ) => {
     const checkDate = parseLocalDate(dateString);
     const reopenDateObj = reopen ? parseLocalDate(reopen) : null;
     const vacationDateObj = vacation ? parseLocalDate(vacation) : null;
     const nextTermDateObj = nextTerm ? parseLocalDate(nextTerm) : null;
+    const isHoliday = (holidayDates || []).some((h) => h.date === dateString);
 
     // If nextTermBegins is set and checkDate >= nextTermBegins, valid for new term
     if (nextTermDateObj && checkDate >= nextTermDateObj) return true;
+
+    if (isHoliday) return false;
 
     if (reopenDateObj && checkDate < reopenDateObj) return false;
     if (vacationDateObj && checkDate > vacationDateObj) return false;
@@ -179,6 +188,7 @@ const TeacherAttendance = () => {
             schoolConfig?.schoolReopenDate,
             schoolConfig?.vacationDate,
             schoolConfig?.nextTermBegins,
+            schoolConfig?.holidayDates,
           )
         ) {
           const record = await db.getTeacherAttendance(schoolId, user.id, date);
@@ -206,6 +216,7 @@ const TeacherAttendance = () => {
           reopen,
           vacation,
           schoolConfig.nextTermBegins,
+          schoolConfig.holidayDates,
         )
       ) {
         return;
@@ -239,6 +250,8 @@ const TeacherAttendance = () => {
       teacherId: user.id,
       schoolId: schoolId || schoolConfig?.schoolId || "",
       status,
+      isHoliday: false,
+      holidayReason: "",
     };
 
     await db.saveTeacherAttendance(record);
@@ -252,6 +265,50 @@ const TeacherAttendance = () => {
     );
 
     setSaving((s) => ({ ...s, [date]: false }));
+  };
+
+  const handleMarkHoliday = async (date: string) => {
+    if (!user?.id || !schoolId) return;
+
+    setSaving((s) => ({ ...s, [date]: true }));
+
+    try {
+      const existing = await db.getAllTeacherAttendance(schoolId, date);
+      const hasNonHoliday = existing.some((r) => !r.isHoliday);
+      if (hasNonHoliday) {
+        setActionMessage(
+          "This date already has attendance records. Clear them before marking a holiday.",
+        );
+        setTimeout(() => setActionMessage(""), 4000);
+        return;
+      }
+
+      const record: TeacherAttendanceRecord = {
+        id: `${schoolId}_${user.id}_${date}`,
+        date,
+        teacherId: user.id,
+        schoolId: schoolId || schoolConfig?.schoolId || "",
+        status: "absent",
+        isHoliday: true,
+        holidayReason: holidayDrafts[date]?.trim() || "",
+      };
+
+      await db.saveTeacherAttendance(record);
+      setAttendanceRecords((prev) => ({ ...prev, [date]: record }));
+      setMissedAttendanceAlert(null);
+
+      await db.addSystemNotification(
+        `${user?.fullName || "Teacher"} marked ${date} as Holiday.`,
+        "attendance",
+        schoolId,
+      );
+
+      setActionMessage("Holiday saved successfully!");
+      setTimeout(() => setActionMessage(""), 3000);
+      setHolidayOpen((prev) => ({ ...prev, [date]: false }));
+    } finally {
+      setSaving((s) => ({ ...s, [date]: false }));
+    }
   };
 
   const isSchoolOpen = () => {
@@ -306,6 +363,19 @@ const TeacherAttendance = () => {
             <p className="text-sm text-slate-600">
               Mark your attendance with confidence — fast, clear, and beautiful.
             </p>
+            {schoolConfig?.holidayDates?.some(
+              (h: any) => h.date === todayString,
+            ) && (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-2 text-xs font-semibold text-amber-900 shadow-sm">
+                Admin Holiday:{" "}
+                {(() => {
+                  const h = schoolConfig.holidayDates.find(
+                    (item: any) => item.date === todayString,
+                  );
+                  return h?.reason || "No reason provided";
+                })()}
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
               <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 font-medium text-slate-700 shadow-sm">
                 <Calendar className="h-4 w-4 text-indigo-500" />
@@ -367,6 +437,12 @@ const TeacherAttendance = () => {
           </div>
         )}
 
+        {actionMessage && (
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-800 shadow-sm">
+            {actionMessage}
+          </div>
+        )}
+
         {!isSchoolOpen() && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 text-rose-800 shadow-sm">
             <div className="flex items-center gap-2 font-semibold">
@@ -401,7 +477,15 @@ const TeacherAttendance = () => {
                   schoolConfig?.schoolReopenDate,
                   schoolConfig?.vacationDate,
                   schoolConfig?.nextTermBegins,
+                  schoolConfig?.holidayDates,
                 );
+                const configHoliday = (schoolConfig?.holidayDates || []).find(
+                  (h: any) => h.date === date,
+                );
+                const isConfigHoliday = Boolean(configHoliday);
+                const isHoliday = !!record?.isHoliday;
+                const holidayReason =
+                  record?.holidayReason || configHoliday?.reason || "";
 
                 return (
                   <div
@@ -416,7 +500,12 @@ const TeacherAttendance = () => {
                         <p className="text-xs text-slate-500">{date}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        {record ? (
+                        {isConfigHoliday || isHoliday ? (
+                          <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                            <AlertTriangle className="h-4 w-4" />
+                            Holiday
+                          </span>
+                        ) : record ? (
                           <span
                             className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
                               record.status === "present"
@@ -453,34 +542,95 @@ const TeacherAttendance = () => {
                       </div>
                     </div>
 
+                    {(isConfigHoliday || isHoliday) && holidayReason && (
+                      <div className="text-xs font-medium text-amber-700">
+                        Reason: {holidayReason}
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-xs text-slate-500">
-                        {isSchoolInSession(date)
-                          ? "School in session"
-                          : "Out of session"}
+                        {isConfigHoliday || isHoliday
+                          ? "Holiday / No School"
+                          : isSchoolInSession(date)
+                            ? "School in session"
+                            : "Out of session"}
                       </div>
 
-                      {record || !isValid || isFuture ? null : (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() =>
-                              handleMarkAttendance(date, "present")
-                            }
-                            className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition hover:scale-[1.02] hover:bg-emerald-100"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                            Present
-                          </button>
-                          <button
-                            onClick={() => handleMarkAttendance(date, "absent")}
-                            className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 shadow-sm transition hover:scale-[1.02] hover:bg-rose-100"
-                          >
-                            <XCircle className="h-4 w-4" />
-                            Absent
-                          </button>
+                      {isConfigHoliday || !isValid || isFuture ? null : (
+                        <div className="flex flex-1 flex-wrap items-center gap-2">
+                          {!record && (
+                            <>
+                              <button
+                                onClick={() =>
+                                  handleMarkAttendance(date, "present")
+                                }
+                                className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition hover:scale-[1.02] hover:bg-emerald-100"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                                Present
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleMarkAttendance(date, "absent")
+                                }
+                                className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 shadow-sm transition hover:scale-[1.02] hover:bg-rose-100"
+                              >
+                                <XCircle className="h-4 w-4" />
+                                Absent
+                              </button>
+                            </>
+                          )}
+
+                          {(!record || record.isHoliday) && (
+                            <button
+                              onClick={() =>
+                                setHolidayOpen((prev) => ({
+                                  ...prev,
+                                  [date]: !prev[date],
+                                }))
+                              }
+                              className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 shadow-sm transition hover:scale-[1.02] hover:bg-amber-100"
+                            >
+                              <AlertTriangle className="h-4 w-4" />
+                              {record?.isHoliday
+                                ? "Update Holiday"
+                                : "Mark Holiday"}
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
+
+                    {(holidayOpen[date] || isHoliday) &&
+                      (!record || record.isHoliday) &&
+                      !isFuture &&
+                      isValid &&
+                      !isConfigHoliday && (
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <input
+                            type="text"
+                            value={
+                              holidayDrafts[date] ?? record?.holidayReason ?? ""
+                            }
+                            onChange={(e) =>
+                              setHolidayDrafts((prev) => ({
+                                ...prev,
+                                [date]: e.target.value,
+                              }))
+                            }
+                            placeholder="Reason (optional) e.g. Independence Day"
+                            className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                          />
+                          <button
+                            onClick={() => handleMarkHoliday(date)}
+                            disabled={saving[date]}
+                            className="inline-flex items-center justify-center gap-2 rounded-full bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:scale-[1.02] hover:bg-amber-700 disabled:opacity-50"
+                          >
+                            Save Holiday
+                          </button>
+                        </div>
+                      )}
                   </div>
                 );
               })}

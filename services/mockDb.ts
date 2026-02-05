@@ -2,6 +2,7 @@ import { firestore } from "./firebase";
 import {
   collection,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
   setDoc,
@@ -95,6 +96,7 @@ class FirestoreService {
       vacationDate: "",
       nextTermBegins: "",
       termTransitionProcessed: false,
+      holidayDates: [],
     };
   }
 
@@ -296,6 +298,24 @@ class FirestoreService {
       collection(firestore, "attendance"),
       where("schoolId", "==", scopedSchoolId),
       where("classId", "==", classId),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as AttendanceRecord);
+  }
+
+  async getAttendanceByDate(
+    schoolId?: string,
+    date?: string,
+  ): Promise<AttendanceRecord[]> {
+    const scopedSchoolId = this.requireSchoolId(
+      schoolId,
+      "getAttendanceByDate",
+    );
+    if (!date) return [];
+    const q = query(
+      collection(firestore, "attendance"),
+      where("schoolId", "==", scopedSchoolId),
+      where("date", "==", date),
     );
     const snap = await getDocs(q);
     return snap.docs.map((d) => d.data() as AttendanceRecord);
@@ -544,17 +564,74 @@ class FirestoreService {
     classId: string,
   ) {
     const attendanceRecords = await this.getClassAttendance(schoolId, classId);
+    const holidayDates = new Set(
+      attendanceRecords.filter((r) => r.isHoliday).map((r) => r.date),
+    );
+    const schoolConfig = await this.getSchoolConfig(schoolId);
+    const configHolidayDates = new Set(
+      (schoolConfig.holidayDates || []).map((h) => h.date),
+    );
 
-    const totalDays = attendanceRecords.length;
-    const presentDays = attendanceRecords.filter((r) =>
-      r.presentStudentIds.includes(studentId),
+    let totalDays = 0;
+    let schoolDates: string[] = [];
+    if (schoolConfig.schoolReopenDate) {
+      const reopen = new Date(`${schoolConfig.schoolReopenDate}T00:00:00`);
+      const vacation = schoolConfig.vacationDate
+        ? new Date(`${schoolConfig.vacationDate}T00:00:00`)
+        : null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const endDate = vacation && vacation < today ? vacation : today;
+
+      if (!Number.isNaN(reopen.getTime())) {
+        const current = new Date(reopen);
+        while (current <= endDate) {
+          const day = current.getDay();
+          const isWeekend = day === 0 || day === 6;
+          if (!isWeekend) {
+            const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+            if (
+              !holidayDates.has(dateKey) &&
+              !configHolidayDates.has(dateKey)
+            ) {
+              totalDays++;
+              schoolDates.push(dateKey);
+            }
+          }
+          current.setDate(current.getDate() + 1);
+        }
+      }
+    }
+
+    if (!totalDays) {
+      const nonHoliday = attendanceRecords.filter(
+        (r) => !r.isHoliday && !configHolidayDates.has(r.date),
+      );
+      totalDays = nonHoliday.length;
+      schoolDates = nonHoliday.map((r) => r.date).sort();
+    }
+    const presentDays = attendanceRecords.filter(
+      (r) =>
+        !r.isHoliday &&
+        !configHolidayDates.has(r.date) &&
+        r.presentStudentIds.includes(studentId),
     ).length;
     const attendancePercentage =
       totalDays === 0 ? 0 : Math.round((presentDays / totalDays) * 100);
 
-    const schoolDates = attendanceRecords.map((r) => r.date).sort();
+    if (!schoolDates.length) {
+      schoolDates = attendanceRecords
+        .filter((r) => !r.isHoliday && !configHolidayDates.has(r.date))
+        .map((r) => r.date)
+        .sort();
+    }
     const presentDates = attendanceRecords
-      .filter((r) => r.presentStudentIds.includes(studentId))
+      .filter(
+        (r) =>
+          !r.isHoliday &&
+          !configHolidayDates.has(r.date) &&
+          r.presentStudentIds.includes(studentId),
+      )
       .map((r) => r.date)
       .sort();
 
@@ -613,9 +690,15 @@ class FirestoreService {
 
     const students = studentsSnap.docs.map((d) => d.data() as Student);
     const users = usersSnap.docs.map((d) => d.data() as User);
-    const attendance = attendanceSnap.docs.map(
-      (d) => d.data() as AttendanceRecord,
+    const config = await this.getSchoolConfig(scopedSchoolId);
+    const configHolidaySet = new Set(
+      (config.holidayDates || []).map((h) => h.date),
     );
+    const attendance = attendanceSnap.docs
+      .map((d) => d.data() as AttendanceRecord)
+      .filter(
+        (record) => !record.isHoliday && !configHolidaySet.has(record.date),
+      );
 
     const male = students.filter((s) => s.gender === "Male").length;
     const female = students.filter((s) => s.gender === "Female").length;
@@ -642,6 +725,33 @@ class FirestoreService {
       teachersCount: users.filter((u) => u.role === UserRole.TEACHER).length,
       gender: { male, female },
       classAttendance,
+    };
+  }
+
+  async getDashboardSummary(schoolId?: string) {
+    const scopedSchoolId = this.requireSchoolId(
+      schoolId,
+      "getDashboardSummary",
+    );
+    const [studentsCountSnap, teachersCountSnap] = await Promise.all([
+      getCountFromServer(
+        query(
+          collection(firestore, "students"),
+          where("schoolId", "==", scopedSchoolId),
+        ),
+      ),
+      getCountFromServer(
+        query(
+          collection(firestore, "users"),
+          where("schoolId", "==", scopedSchoolId),
+          where("role", "==", UserRole.TEACHER),
+        ),
+      ),
+    ]);
+
+    return {
+      studentsCount: studentsCountSnap.data().count,
+      teachersCount: teachersCountSnap.data().count,
     };
   }
 
@@ -1024,7 +1134,7 @@ class FirestoreService {
       );
 
       const recordsInRange = teacherRecords.filter((r) => {
-        return r.date >= startDate && r.date <= endDate;
+        return r.date >= startDate && r.date <= endDate && !r.isHoliday;
       });
 
       const monthlyData: Record<string, { total: number; present: number }> =

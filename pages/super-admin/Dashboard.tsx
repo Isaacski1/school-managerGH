@@ -267,69 +267,78 @@ const Dashboard: React.FC = () => {
           }
         > = {};
 
-        const perSchoolChecks = schools.map(async (school) => {
+        const [
+          attendanceSnap,
+          teacherAttendanceSnap,
+          assessmentsSnap,
+          timetablesSnap,
+          noticesSnap,
+        ] = await Promise.all([
+          getDocs(
+            query(
+              collection(firestore, "attendance"),
+              where("date", "==", today),
+            ),
+          ),
+          getDocs(
+            query(
+              collection(firestore, "teacher_attendance"),
+              where("date", "==", today),
+            ),
+          ),
+          getDocs(
+            query(
+              collection(firestore, "assessments"),
+              where("createdAt", ">=", startMs),
+              where("createdAt", "<=", endMs),
+            ),
+          ),
+          getDocs(collection(firestore, "timetables")),
+          getDocs(
+            query(
+              collection(firestore, "notices"),
+              where("createdAt", ">=", startMs),
+              where("createdAt", "<=", endMs),
+            ),
+          ),
+        ]);
+
+        const attendanceSchools = new Set(
+          attendanceSnap.docs
+            .map((doc) => (doc.data() as any).schoolId)
+            .filter(Boolean),
+        );
+        const teacherAttendanceSchools = new Set(
+          teacherAttendanceSnap.docs
+            .map((doc) => (doc.data() as any).schoolId)
+            .filter(Boolean),
+        );
+        const assessmentSchools = new Set(
+          assessmentsSnap.docs
+            .map((doc) => (doc.data() as any).schoolId)
+            .filter(Boolean),
+        );
+        const timetableSchools = new Set(
+          timetablesSnap.docs
+            .map((doc) => (doc.data() as any).schoolId)
+            .filter(Boolean),
+        );
+        const noticeSchools = new Set(
+          noticesSnap.docs
+            .map((doc) => (doc.data() as any).schoolId)
+            .filter(Boolean),
+        );
+
+        schools.forEach((school) => {
           const schoolId = school.id;
           if (!schoolId) return;
 
-          const [
-            attendanceSnap,
-            teacherAttendanceSnap,
-            assessmentSnap,
-            timetableSnap,
-            noticesSnap,
-          ] = await Promise.all([
-            getDocs(
-              query(
-                collection(firestore, "attendance"),
-                where("schoolId", "==", schoolId),
-                where("date", "==", today),
-                limit(1),
-              ),
-            ),
-            getDocs(
-              query(
-                collection(firestore, "teacher_attendance"),
-                where("schoolId", "==", schoolId),
-                where("date", "==", today),
-                limit(1),
-              ),
-            ),
-            getDocs(
-              query(
-                collection(firestore, "admin_notifications"),
-                where("schoolId", "==", schoolId),
-                where("type", "==", "assessment"),
-                where("createdAt", ">=", startMs),
-                where("createdAt", "<=", endMs),
-                limit(1),
-              ),
-            ),
-            getDocs(
-              query(
-                collection(firestore, "timetables"),
-                where("schoolId", "==", schoolId),
-                where("updatedAt", ">=", startMs),
-                where("updatedAt", "<=", endMs),
-                limit(1),
-              ),
-            ),
-            getDocs(
-              query(
-                collection(firestore, "notices"),
-                where("schoolId", "==", schoolId),
-                where("createdAt", ">=", startMs),
-                where("createdAt", "<=", endMs),
-                limit(1),
-              ),
-            ),
-          ]);
-
           const status = {
-            attendance: !attendanceSnap.empty,
-            teacherAttendance: !teacherAttendanceSnap.empty,
-            assessments: !assessmentSnap.empty,
-            timetable: !timetableSnap.empty,
-            notices: !noticesSnap.empty,
+            attendance: attendanceSchools.has(schoolId),
+            teacherAttendance: teacherAttendanceSchools.has(schoolId),
+            assessments: assessmentSchools.has(schoolId),
+            timetable: timetableSchools.has(schoolId),
+            notices: noticeSchools.has(schoolId),
           };
           perSchool[schoolId] = status;
 
@@ -340,8 +349,6 @@ const Dashboard: React.FC = () => {
           if (status.timetable) completion.timetable.completed += 1;
           if (status.notices) completion.notices.completed += 1;
         });
-
-        await Promise.all(perSchoolChecks);
         setDailyChecklist({ summary: completion, perSchool });
       } catch (err) {
         console.error("Failed to load daily checklist", err);

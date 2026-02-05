@@ -90,9 +90,12 @@ const SystemSettings = () => {
     termTransitionProcessed: false,
     headTeacherRemark: "",
     termEndDate: "",
+    holidayDates: [],
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false); // New state
+  const [newHolidayDate, setNewHolidayDate] = useState("");
+  const [newHolidayReason, setNewHolidayReason] = useState("");
 
   // Danger Zone State
   const [showDangerZone, setShowDangerZone] = useState(false);
@@ -146,7 +149,12 @@ const SystemSettings = () => {
 
   const fetchConfig = async () => {
     const data = await db.getSchoolConfig(schoolId);
-    setConfig((prev) => ({ ...prev, schoolId, ...data }));
+    setConfig((prev) => ({
+      ...prev,
+      schoolId,
+      ...data,
+      holidayDates: data.holidayDates || [],
+    }));
   };
 
   useEffect(() => {
@@ -161,9 +169,51 @@ const SystemSettings = () => {
   // --- Config Handlers ---
   const handleSaveConfig = async () => {
     setSavingConfig(true);
-    await db.updateSchoolConfig(config);
+    await db.updateSchoolConfig({
+      ...config,
+      holidayDates: config.holidayDates || [],
+    });
     setSavingConfig(false);
     showToast("Configuration saved successfully!", { type: "success" });
+  };
+
+  const handleAddHolidayDate = async () => {
+    if (!newHolidayDate) return;
+    const trimmedReason = newHolidayReason.trim();
+    const current = config.holidayDates || [];
+    if (current.some((h) => h.date === newHolidayDate)) {
+      showToast("Holiday date already exists.", { type: "error" });
+      return;
+    }
+    const nextConfig = {
+      ...config,
+      holidayDates: [
+        ...current,
+        { date: newHolidayDate, reason: trimmedReason || undefined },
+      ].sort((a, b) => a.date.localeCompare(b.date)),
+    };
+    setConfig(nextConfig);
+    await db.updateSchoolConfig({
+      ...nextConfig,
+      holidayDates: nextConfig.holidayDates || [],
+    });
+    showToast("Holiday date saved.", { type: "success" });
+    setNewHolidayDate("");
+    setNewHolidayReason("");
+  };
+
+  const handleRemoveHolidayDate = async (date: string) => {
+    const current = config.holidayDates || [];
+    const nextConfig = {
+      ...config,
+      holidayDates: current.filter((h) => h.date !== date),
+    };
+    setConfig(nextConfig);
+    await db.updateSchoolConfig({
+      ...nextConfig,
+      holidayDates: nextConfig.holidayDates || [],
+    });
+    showToast("Holiday date removed.", { type: "success" });
   };
 
   const handleCreateTermBackup = async () => {
@@ -511,6 +561,75 @@ const SystemSettings = () => {
                           className="w-full border border-slate-200 pl-10 pr-3 py-2.5 rounded-xl bg-white text-slate-800 focus:ring-2 focus:ring-emerald-200 outline-none"
                         />
                       </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+                    <div className="flex items-center gap-2 text-amber-900 font-semibold">
+                      <AlertTriangle className="h-5 w-5" />
+                      Holiday Dates (exclude from term totals)
+                    </div>
+                    <p className="mt-1 text-xs text-amber-800">
+                      Add dates here to remove them from term total days and
+                      attendance analytics.
+                    </p>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-[180px_1fr_auto] gap-3 items-center">
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-amber-400 pointer-events-none" />
+                        <input
+                          type="date"
+                          value={newHolidayDate}
+                          onChange={(e) => setNewHolidayDate(e.target.value)}
+                          className="w-full border border-amber-200 pl-10 pr-3 py-2.5 rounded-xl bg-white text-slate-800 focus:ring-2 focus:ring-amber-200 outline-none"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={newHolidayReason}
+                        onChange={(e) => setNewHolidayReason(e.target.value)}
+                        placeholder="Reason (optional) e.g. Independence Day"
+                        className="w-full border border-amber-200 px-3 py-2.5 rounded-xl bg-white text-slate-800 focus:ring-2 focus:ring-amber-200 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddHolidayDate}
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700"
+                      >
+                        <Plus size={16} />
+                        Add
+                      </button>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {(config.holidayDates || []).length === 0 ? (
+                        <div className="text-xs text-amber-700">
+                          No holiday dates added yet.
+                        </div>
+                      ) : (
+                        (config.holidayDates || []).map((h) => (
+                          <div
+                            key={h.date}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-amber-900">
+                                {h.date}
+                              </p>
+                              {h.reason && (
+                                <p className="text-xs text-amber-700">
+                                  {h.reason}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveHolidayDate(h.date)}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-700"
+                            >
+                              <Trash2 size={14} />
+                              Remove
+                            </button>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>

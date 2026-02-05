@@ -45,6 +45,7 @@ export interface SchoolConfig {
   logoUrl?: string;
   nextTermBegins: string;
   termTransitionProcessed: boolean;
+  holidayDates?: { date: string; reason?: string }[];
 }
 
 export interface Backup {
@@ -103,6 +104,8 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   classId: string;
   presentStudentIds: string[];
+  isHoliday?: boolean;
+  holidayReason?: string;
 }
 
 export interface TeacherAttendanceRecord {
@@ -111,6 +114,8 @@ export interface TeacherAttendanceRecord {
   date: string; // YYYY-MM-DD
   teacherId: string;
   status: "present" | "absent";
+  isHoliday?: boolean;
+  holidayReason?: string;
 }
 
 export interface Assessment {
