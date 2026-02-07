@@ -1,9 +1,18 @@
 ﻿import schoolLogo from "../logo/apple-icon-180x180.png";
 import React, { useState, useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
+import {
+  collection,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  Timestamp,
+} from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { useSchool } from "../context/SchoolContext";
 import { db } from "../services/mockDb";
+import { firestore } from "../services/firebase";
 import { UserRole, SystemNotification } from "../types";
 import Toast from "./Toast";
 
@@ -108,12 +117,115 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
     };
   }, [school, isFreePlan, isSuperAdmin]);
 
-  // Fetch Notifications for Admin
+  const formatPaymentAmount = (amount?: number, currency = "GHS") => {
+    if (!amount && amount !== 0) return "";
+    const normalized = amount >= 100 ? amount / 100 : amount;
+    return new Intl.NumberFormat("en-GH", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(normalized);
+  };
+
+  const getSuperAdminDismissedKey = () =>
+    `superAdminDismissedNotifications:${user?.id || "unknown"}`;
+
+  const getSuperAdminReadKey = () =>
+    `superAdminReadNotifications:${user?.id || "unknown"}`;
+
+  const loadSuperAdminDismissed = () => {
+    try {
+      const raw = localStorage.getItem(getSuperAdminDismissedKey());
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveSuperAdminDismissed = (ids: string[]) => {
+    try {
+      localStorage.setItem(getSuperAdminDismissedKey(), JSON.stringify(ids));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const loadSuperAdminRead = () => {
+    try {
+      const raw = localStorage.getItem(getSuperAdminReadKey());
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveSuperAdminRead = (ids: string[]) => {
+    try {
+      localStorage.setItem(getSuperAdminReadKey(), JSON.stringify(ids));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const toTimestamp = (value: any) => {
+    if (!value) return Date.now();
+    if (value instanceof Timestamp) return value.toMillis();
+    if (typeof value === "number") return value;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime();
+  };
+
+  // Fetch Notifications for Admin / Super Admin
   useEffect(() => {
     if (isAdmin || isSuperAdmin) {
       const fetchNotifications = async () => {
         try {
-          if (!schoolId) return;
+          if (!schoolId && !isSuperAdmin) return;
+
+          if (isSuperAdmin) {
+            const dismissedIds = new Set(loadSuperAdminDismissed());
+            const readIds = new Set(loadSuperAdminRead());
+            const paymentsQuery = query(
+              collection(firestore, "payments"),
+              orderBy("createdAt", "desc"),
+              limit(20),
+            );
+            const snap = await getDocs(paymentsQuery);
+            const notes: SystemNotification[] = snap.docs
+              .filter((doc) => !dismissedIds.has(doc.id))
+              .map((doc) => {
+                const payment = doc.data() as any;
+                const amountLabel = formatPaymentAmount(
+                  payment.amount,
+                  payment.currency || "GHS",
+                );
+                const status = String(
+                  payment.status || "pending",
+                ).toLowerCase();
+                const statusLabel = ["success", "paid", "active"].includes(
+                  status,
+                )
+                  ? "paid"
+                  : ["failed", "failure", "past_due"].includes(status)
+                    ? "failed"
+                    : "pending";
+                const schoolLabel =
+                  payment.schoolName || payment.schoolId || "";
+
+                return {
+                  id: doc.id,
+                  schoolId: payment.schoolId || "system",
+                  message: `${schoolLabel} payment ${statusLabel}${amountLabel ? ` · ${amountLabel}` : ""}`,
+                  createdAt: toTimestamp(payment.createdAt),
+                  isRead: readIds.has(doc.id),
+                  type: "system",
+                };
+              });
+            setNotifications(notes);
+            setUnreadCount(notes.filter((n) => !n.isRead).length);
+            return;
+          }
+
           const notes = await db.getSystemNotifications(schoolId);
           setNotifications(notes);
           setUnreadCount(notes.filter((n) => !n.isRead).length);
@@ -131,6 +243,15 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   const handleMarkRead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isSuperAdmin) {
+      const nextRead = Array.from(new Set([...loadSuperAdminRead(), id]));
+      saveSuperAdminRead(nextRead);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+      return;
+    }
     await db.markNotificationAsRead(id);
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
@@ -140,6 +261,20 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   const handleDeleteNotification = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isSuperAdmin) {
+      const removedWasUnread = notifications.find(
+        (n) => n.id === id && !n.isRead,
+      );
+      const nextDismissed = Array.from(
+        new Set([...loadSuperAdminDismissed(), id]),
+      );
+      saveSuperAdminDismissed(nextDismissed);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setUnreadCount((prev) =>
+        removedWasUnread ? Math.max(0, prev - 1) : prev,
+      );
+      return;
+    }
     try {
       await db.deleteSystemNotification(id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));

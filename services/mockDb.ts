@@ -527,15 +527,10 @@ class FirestoreService {
   async getSystemNotifications(
     schoolId?: string,
   ): Promise<SystemNotification[]> {
-    const scopedSchoolId = this.requireSchoolId(
-      schoolId,
-      "getSystemNotifications",
-    );
-    const q = query(
-      collection(firestore, "admin_notifications"),
-      where("schoolId", "==", scopedSchoolId),
-      limit(20),
-    );
+    const baseRef = collection(firestore, "admin_notifications");
+    const q = schoolId
+      ? query(baseRef, where("schoolId", "==", schoolId), limit(20))
+      : query(baseRef, limit(50));
     const snap = await getDocs(q);
     return snap.docs
       .map((d) => d.data() as SystemNotification)
