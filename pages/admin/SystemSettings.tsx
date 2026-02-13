@@ -94,6 +94,9 @@ const SystemSettings = () => {
     headTeacherRemark: "",
     termEndDate: "",
     holidayDates: [],
+    passMark: 50,
+    failMark: 49,
+    isPromotionalTerm: true,
     gradingScale: { A: 80, B: 70, C: 60, D: 45 },
     positionRule: "total",
   });
@@ -159,6 +162,12 @@ const SystemSettings = () => {
       schoolId,
       ...data,
       holidayDates: data.holidayDates || [],
+      passMark: typeof data.passMark === "number" ? data.passMark : 50,
+      failMark: typeof data.failMark === "number" ? data.failMark : 49,
+      isPromotionalTerm:
+        typeof data.isPromotionalTerm === "boolean"
+          ? data.isPromotionalTerm
+          : true,
       gradingScale: data.gradingScale || { A: 80, B: 70, C: 60, D: 45 },
       positionRule: data.positionRule || "total",
     }));
@@ -718,6 +727,107 @@ const SystemSettings = () => {
                   ))}
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Pass Mark (&gt;=)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={config.passMark ?? ""}
+                      onChange={(e) => {
+                        const nextPass = Number(e.target.value || 0);
+                        setConfig({
+                          ...config,
+                          passMark: nextPass,
+                          failMark:
+                            config.failMark !== undefined &&
+                            config.failMark >= nextPass
+                              ? Math.max(0, nextPass - 1)
+                              : config.failMark,
+                        });
+                      }}
+                      className="w-full border border-slate-200 p-2.5 rounded-xl bg-white text-slate-800 focus:ring-2 focus:ring-emerald-200 outline-none"
+                    />
+                    <p className="text-xs text-slate-500 mt-2">
+                      Students with scores at or above this mark pass.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Fail Mark (&lt;=)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={config.failMark ?? ""}
+                      onChange={(e) => {
+                        const nextFail = Number(e.target.value || 0);
+                        setConfig({
+                          ...config,
+                          failMark: nextFail,
+                          passMark:
+                            config.passMark !== undefined &&
+                            nextFail >= config.passMark
+                              ? Math.min(100, nextFail + 1)
+                              : config.passMark,
+                        });
+                      }}
+                      className="w-full border border-slate-200 p-2.5 rounded-xl bg-white text-slate-800 focus:ring-2 focus:ring-emerald-200 outline-none"
+                    />
+                    <p className="text-xs text-slate-500 mt-2">
+                      Students with scores at or below this mark fail.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Promotional Term
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="radio"
+                        name="promotionalTerm"
+                        value="yes"
+                        checked={config.isPromotionalTerm === true}
+                        onChange={() =>
+                          setConfig({
+                            ...config,
+                            isPromotionalTerm: true,
+                          })
+                        }
+                        className="h-4 w-4 text-emerald-600"
+                      />
+                      Promotional (show pass/fail promotion)
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="radio"
+                        name="promotionalTerm"
+                        value="no"
+                        checked={config.isPromotionalTerm === false}
+                        onChange={() =>
+                          setConfig({
+                            ...config,
+                            isPromotionalTerm: false,
+                          })
+                        }
+                        className="h-4 w-4 text-emerald-600"
+                      />
+                      Non-promotional (hide promotion)
+                    </label>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    When set to non-promotional, report cards will hide
+                    promotion status.
+                  </p>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Position Rule
@@ -913,7 +1023,7 @@ const SystemSettings = () => {
 
             {/* Secret Database Reset */}
             {showDangerZone && (
-              <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-6">
+              <div className="bg-red-700 border border-rose-500/20 rounded-2xl p-6">
                 <div className="flex items-center mb-4">
                   <Shield className="text-rose-200 mr-2" size={24} />
                   <h2 className="text-xl font-bold text-rose-200">
@@ -941,13 +1051,13 @@ const SystemSettings = () => {
             <div className="text-center mt-4">
               <button
                 onClick={() => setShowDangerZone(!showDangerZone)}
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 shadow-sm transition-all hover:border-white/20 hover:text-white hover:shadow-md"
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-red-700 px-4 py-2 text-sm font-semibold text-slate-200 shadow-sm transition-all hover:border-white/20 hover:text-white hover:shadow-md"
               >
                 <span
                   className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold transition-colors ${
                     showDangerZone
-                      ? "bg-rose-500/20 text-rose-200"
-                      : "bg-cyan-500/20 text-cyan-200"
+                      ? "bg-red-600 text-rose-100"
+                      : "bg-rose-600 text-cyan-100"
                   }`}
                 >
                   {showDangerZone ? "—" : "+"}

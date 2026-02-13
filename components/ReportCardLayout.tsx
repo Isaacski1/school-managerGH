@@ -462,9 +462,11 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
 
         {/* Promotion & Dates */}
         <div className="grid grid-cols-3 gap-3 mb-2 text-xs">
-          <div className="bg-red-50 text-red-800 p-2 rounded text-center">
-            <span className="font-bold">Promotion:</span> {promotion.status}
-          </div>
+          {promotion?.isPromotionalTerm !== false && (
+            <div className="bg-red-50 text-red-800 p-2 rounded text-center">
+              <span className="font-bold">Promotion:</span> {promotion.status}
+            </div>
+          )}
           <div className="bg-green-50 text-green-800 p-2 rounded text-center">
             <span className="font-bold">Next Term:</span>{" "}
             {termDates.reopeningDate}

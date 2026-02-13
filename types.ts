@@ -151,6 +151,9 @@ export interface SchoolConfig {
   nextTermBegins: string;
   termTransitionProcessed: boolean;
   holidayDates?: { date: string; reason?: string }[];
+  passMark?: number;
+  failMark?: number;
+  isPromotionalTerm?: boolean;
   gradingScale?: {
     A: number;
     B: number;

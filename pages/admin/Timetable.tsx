@@ -249,7 +249,7 @@ const Timetable = () => {
         </div>
 
         {/* Main Content Area */}
-        <div className="flex flex-1 overflow-y-auto md:overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-y-auto">
           {/* Days Sidebar (Tabs) */}
           <div className="hidden md:flex w-40 border-r border-slate-100 bg-white flex flex-col overflow-y-auto">
             {DAYS.map((day) => {
@@ -268,7 +268,7 @@ const Timetable = () => {
           </div>
 
           {/* Editor Area */}
-          <div className="flex-1 flex flex-col overflow-y-auto md:overflow-hidden bg-slate-50/50">
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto bg-slate-50/50">
             {/* Mobile Day Tabs */}
             <div className="md:hidden flex overflow-x-auto bg-white border-b border-slate-100">
               {DAYS.map((day) => {

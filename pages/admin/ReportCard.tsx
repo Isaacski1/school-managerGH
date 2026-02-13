@@ -265,8 +265,9 @@ const ReportCard = () => {
           ? CLASSES_LIST[currentClassIndex + 1].name
           : "";
 
+      const isPromotionalTerm = schoolConfig.isPromotionalTerm ?? true;
       const promotionStatus =
-        termNumber === 3
+        termNumber === 3 && isPromotionalTerm
           ? totalScoreForPromotion >= PASS_THRESHOLD
             ? nextClassName
               ? `Promoted to ${nextClassName}`
@@ -337,6 +338,7 @@ const ReportCard = () => {
         },
         promotion: {
           status: promotionStatus,
+          isPromotionalTerm,
         },
         termDates: {
           endDate: schoolConfig.termEndDate || "",

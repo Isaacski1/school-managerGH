@@ -437,12 +437,16 @@ const AdminDashboard = () => {
     const cachedTeacherAttendance = (
       cachedHeavy.teacherAttendance || []
     ).filter((record: any) => record.date === todayStr);
-    setTeacherAttendance(cachedTeacherAttendance);
     const cachedPending = cachedHeavy.pendingTeacherAttendance || [];
     const filteredCachedPending = cachedPending.filter(
       (record: any) => record.approvalStatus === "pending",
     );
-    setPendingTeacherAttendance(filteredCachedPending);
+    const cachedApprovedToday = cachedTeacherAttendance;
+    setTeacherAttendance(cachedApprovedToday);
+    const filteredCachedPendingNotToday = filteredCachedPending.filter(
+      (record: any) => record.date !== todayStr,
+    );
+    setPendingTeacherAttendance(filteredCachedPendingNotToday);
     setTeacherTermStats(cachedHeavy.teacherTermStats);
     setMissedAttendanceAlerts(cachedHeavy.missedAttendanceAlerts);
     setMissedStudentAttendanceAlerts(cachedHeavy.missedStudentAttendanceAlerts);
@@ -610,11 +614,7 @@ const AdminDashboard = () => {
           ...(config.holidayDates || []).map((h) => h.date),
         ]);
 
-        if (
-          schoolHasReopened &&
-          !isOnVacation &&
-          allTeacherRecords.length > 0
-        ) {
+        if (schoolHasReopened && !isOnVacation && teachers.length > 0) {
           // Parse dates
           const parseLocalDate = (dateStr: string): Date | null => {
             if (!dateStr) return null;
@@ -950,7 +950,8 @@ const AdminDashboard = () => {
           });
 
         const attendanceKey = (record: any) =>
-          record.id || `${record.teacherId || "unknown"}_${record.date || ""}`;
+          record.id ||
+          `${record.schoolId || schoolId || "unknown"}_${record.teacherId || "unknown"}_${record.date || ""}`;
 
         // Map today's attendance records to include teacher names and classes
         const teacherAttendanceWithDetails = teacherAttendanceData.map(
@@ -979,9 +980,10 @@ const AdminDashboard = () => {
         const pendingAttendanceWithDetails = pendingRecordsForToday.map(
           (record) => {
             const teacher = teachers.find((t) => t.id === record.teacherId);
+            const resolvedId = record.id || attendanceKey(record);
             return {
               ...record,
-              id: attendanceKey(record),
+              id: resolvedId,
               teacherName: teacher?.fullName || "Unknown",
               teacherClasses:
                 teacher?.assignedClassIds
@@ -997,6 +999,21 @@ const AdminDashboard = () => {
               record.date === today && record.approvalStatus !== "pending",
             ),
           )
+          .map((record) => {
+            const teacher = teachers.find((t) => t.id === record.teacherId);
+            return {
+              ...record,
+              id: attendanceKey(record),
+              teacherName: teacher?.fullName || "Unknown",
+              teacherClasses:
+                teacher?.assignedClassIds
+                  ?.map((id) => CLASSES_LIST.find((c) => c.id === id)?.name)
+                  .join(", ") || "Not Assigned",
+            };
+          }) as any[];
+
+        const todayAttendanceWithDetails = allTeacherRecords
+          .filter((record) => record.date === today)
           .map((record) => {
             const teacher = teachers.find((t) => t.id === record.teacherId);
             return {
@@ -1151,21 +1168,24 @@ const AdminDashboard = () => {
         setNotices(fetchedNotices);
         setBroadcasts(fetchedBroadcasts);
         setRecentStudents(students.slice(-5).reverse());
-        const combinedTeacherAttendance = [
-          ...approvedAttendanceWithDetails,
-          ...teacherAttendanceWithDetails,
-        ]
-          .filter((record) => record.date === today)
-          .reduce((acc: any[], record: any) => {
+        const todayTeacherAttendance = todayAttendanceWithDetails.reduce(
+          (acc: any[], record: any) => {
             const key = attendanceKey(record);
             if (!acc.find((item) => attendanceKey(item) === key)) {
-              acc.push({ ...record, id: key });
+              acc.push({ ...record, id: record.id || key });
             }
             return acc;
-          }, []);
-        setTeacherAttendance(combinedTeacherAttendance);
+          },
+          [],
+        );
+        setTeacherAttendance(todayTeacherAttendance);
+        const yesterdayDate = new Date(localToday);
+        yesterdayDate.setDate(localToday.getDate() - 1);
+        const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth() + 1).padStart(2, "0")}-${String(yesterdayDate.getDate()).padStart(2, "0")}`;
         const pendingTodayWithDetails = pendingAttendanceWithDetails.filter(
-          (record) => record.approvalStatus === "pending",
+          (record) =>
+            record.approvalStatus === "pending" &&
+            (record.date === today || record.date === yesterdayStr),
         );
         setPendingTeacherAttendance(pendingTodayWithDetails);
         setTeacherTermStats(teacherTermStats);
@@ -1182,7 +1202,7 @@ const AdminDashboard = () => {
             stats: fullStats,
             notices: fetchedNotices,
             recentStudents: students.slice(-5).reverse(),
-            teacherAttendance: combinedTeacherAttendance,
+            teacherAttendance: todayTeacherAttendance,
             pendingTeacherAttendance: pendingTodayWithDetails,
             teacherTermStats: teacherTermStats,
             missedAttendanceAlerts: missedAlerts,
@@ -1290,16 +1310,27 @@ const AdminDashboard = () => {
   const handleApproveTeacherAttendance = async (record: any) => {
     if (!schoolId || !user?.id) return;
     try {
-      await db.approveTeacherAttendance(schoolId, record.id, user.id);
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const recordId =
+        record.id ||
+        `${schoolId}_${record.teacherId}_${record.date || todayStr}`;
+      await db.approveTeacherAttendance(schoolId, recordId, user.id);
       showToast(`Approved attendance for ${record.teacherName}.`, {
         type: "success",
       });
       setPendingTeacherAttendance((prev) =>
-        prev.filter((item) => item.id !== record.id),
+        prev.filter((item) => item.id !== recordId),
       );
       setTeacherAttendance((prev) => [
         ...prev,
-        { ...record, approvalStatus: "approved", approvedBy: user.id },
+        {
+          ...record,
+          approvalStatus: "approved",
+          approvedBy: user.id,
+          date: record.date || todayStr,
+          id: recordId,
+        },
       ]);
       if (heavyCacheKey) {
         localStorage.removeItem(heavyCacheKey);
@@ -1313,12 +1344,17 @@ const AdminDashboard = () => {
   const handleRejectTeacherAttendance = async (record: any) => {
     if (!schoolId || !user?.id) return;
     try {
-      await db.rejectTeacherAttendance(schoolId, record.id, user.id);
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const recordId =
+        record.id ||
+        `${schoolId}_${record.teacherId}_${record.date || todayStr}`;
+      await db.rejectTeacherAttendance(schoolId, recordId, user.id);
       showToast(`Rejected attendance for ${record.teacherName}.`, {
         type: "success",
       });
       setPendingTeacherAttendance((prev) =>
-        prev.filter((item) => item.id !== record.id),
+        prev.filter((item) => item.id !== recordId),
       );
       setTeacherAttendance((prev) => [
         ...prev,
@@ -1327,6 +1363,8 @@ const AdminDashboard = () => {
           approvalStatus: "rejected",
           status: "absent",
           approvedBy: user.id,
+          date: record.date || todayStr,
+          id: recordId,
         },
       ]);
       if (heavyCacheKey) {
@@ -3303,7 +3341,7 @@ const AdminDashboard = () => {
               <thead className="bg-slate-50 text-slate-700 font-semibold">
                 <tr>
                   <th className="px-6 py-3">Student Name</th>
-                  <th className="px-6 py-3">Assigned Class</th>
+                  <th className="px-6 py-3 text-center">Assigned Class</th>
                   <th className="px-6 py-3">Status</th>
                   <th className="px-6 py-3 text-right">Action</th>
                 </tr>
@@ -3321,7 +3359,7 @@ const AdminDashboard = () => {
                       key={s.id}
                       className="hover:bg-slate-50 transition-colors"
                     >
-                      <td className="px-6 py-4 font-medium text-slate-800 flex items-center">
+                      <td className="px-6 py-4 font-medium text-slate-800 flex items-center align-middle">
                         <div
                           className={`w-8 h-8 rounded-full flex items-center justify-center text-xs text-white mr-3 shadow-sm ${s.gender === "Male" ? "bg-amber-400" : "bg-[#0B4A82]"}`}
                         >
@@ -3334,18 +3372,18 @@ const AdminDashboard = () => {
                           </p>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
+                      <td className="px-6 py-4 align-middle text-center">
+                        <span className="inline-flex items-center justify-center min-w-[72px] px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
                           {CLASSES_LIST.find((c) => c.id === s.classId)?.name}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 align-middle">
                         <span className="inline-flex items-center text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>
                           Active
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right align-middle">
                         <div className="relative">
                           <button
                             onClick={(e) => handleMenuClick(e, s.id)}
