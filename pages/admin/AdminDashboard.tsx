@@ -1315,7 +1315,10 @@ const AdminDashboard = () => {
       const recordId =
         record.id ||
         `${schoolId}_${record.teacherId}_${record.date || todayStr}`;
-      await db.approveTeacherAttendance(schoolId, recordId, user.id);
+      await db.approveTeacherAttendance(schoolId, recordId, user.id, {
+        teacherId: record.teacherId,
+        date: record.date || todayStr,
+      });
       showToast(`Approved attendance for ${record.teacherName}.`, {
         type: "success",
       });
@@ -1349,7 +1352,10 @@ const AdminDashboard = () => {
       const recordId =
         record.id ||
         `${schoolId}_${record.teacherId}_${record.date || todayStr}`;
-      await db.rejectTeacherAttendance(schoolId, recordId, user.id);
+      await db.rejectTeacherAttendance(schoolId, recordId, user.id, {
+        teacherId: record.teacherId,
+        date: record.date || todayStr,
+      });
       showToast(`Rejected attendance for ${record.teacherName}.`, {
         type: "success",
       });

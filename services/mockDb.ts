@@ -8,6 +8,7 @@ import {
   setDoc,
   deleteDoc,
   updateDoc,
+  writeBatch,
   query,
   where,
   orderBy,
@@ -246,8 +247,153 @@ class FirestoreService {
     });
   }
 
+  async updateStudentsClassBulk(
+    schoolId: string | undefined,
+    updates: { id: string; classId: string }[],
+  ): Promise<void> {
+    const scopedSchoolId = this.requireSchoolId(
+      schoolId,
+      "updateStudentsClassBulk",
+    );
+    if (!updates.length) return;
+
+    const batch = writeBatch(firestore);
+    updates.forEach((update) => {
+      const studentRef = doc(firestore, "students", update.id);
+      batch.update(studentRef, {
+        classId: update.classId,
+        schoolId: scopedSchoolId,
+      });
+    });
+    await batch.commit();
+  }
+
   async deleteStudent(id: string): Promise<void> {
-    await deleteDoc(doc(firestore, "students", id));
+    const studentRef = doc(firestore, "students", id);
+    const snap = await getDoc(studentRef);
+    if (snap.exists()) {
+      const student = snap.data() as Student;
+      const [assessments, remarks, skills, adminRemarks, attendanceRecords] =
+        await Promise.all([
+          this.getAllAssessments(student.schoolId),
+          this.getStudentRemarks(student.schoolId, student.classId),
+          this.getStudentSkills(student.schoolId, student.classId),
+          this.getAdminRemarksByStudent(student.schoolId, student.id),
+          this.getClassAttendance(student.schoolId, student.classId),
+        ]);
+
+      const studentAttendance = attendanceRecords.filter((record) =>
+        record.presentStudentIds.includes(student.id),
+      );
+      const attendanceTotal = attendanceRecords.filter(
+        (r) => !r.isHoliday,
+      ).length;
+      const attendancePresent = studentAttendance.length;
+      const attendancePercentage =
+        attendanceTotal === 0
+          ? 0
+          : Math.round((attendancePresent / attendanceTotal) * 100);
+
+      const archiveId = `${student.id}_${Date.now()}`;
+      await setDoc(doc(firestore, "students_archive", archiveId), {
+        ...student,
+        archivedAt: Date.now(),
+        archivedReason: "manual_delete",
+        archivedAssessments: assessments.filter(
+          (a) => a.studentId === student.id,
+        ),
+        archivedRemarks: remarks.filter((r) => r.studentId === student.id),
+        archivedSkills: skills.filter((s) => s.studentId === student.id),
+        archivedAdminRemarks: adminRemarks,
+        archivedAttendanceSummary: {
+          total: attendanceTotal,
+          present: attendancePresent,
+          percentage: attendancePercentage,
+        },
+      });
+    }
+    await deleteDoc(studentRef);
+  }
+
+  async deleteStudentsByClass(
+    schoolId: string | undefined,
+    classId: string,
+  ): Promise<number> {
+    const scopedSchoolId = this.requireSchoolId(
+      schoolId,
+      "deleteStudentsByClass",
+    );
+    const q = query(
+      collection(firestore, "students"),
+      where("schoolId", "==", scopedSchoolId),
+      where("classId", "==", classId),
+    );
+    const snap = await getDocs(q);
+    const students = snap.docs.map((d) => d.data() as Student);
+    if (students.length > 0) {
+      const [assessments, remarks, skills, attendanceRecords] =
+        await Promise.all([
+          this.getAllAssessments(scopedSchoolId),
+          this.getStudentRemarks(scopedSchoolId, classId),
+          this.getStudentSkills(scopedSchoolId, classId),
+          this.getClassAttendance(scopedSchoolId, classId),
+        ]);
+
+      const attendanceTotal = attendanceRecords.filter(
+        (r) => !r.isHoliday,
+      ).length;
+
+      const archiveWrites = await Promise.all(
+        students.map(async (student) => {
+          const studentAttendance = attendanceRecords.filter((record) =>
+            record.presentStudentIds.includes(student.id),
+          );
+          const attendancePresent = studentAttendance.length;
+          const attendancePercentage =
+            attendanceTotal === 0
+              ? 0
+              : Math.round((attendancePresent / attendanceTotal) * 100);
+          const adminRemarks = await this.getAdminRemarksByStudent(
+            scopedSchoolId,
+            student.id,
+          );
+          const archiveId = `${student.id}_${Date.now()}`;
+          return setDoc(doc(firestore, "students_archive", archiveId), {
+            ...student,
+            archivedAt: Date.now(),
+            archivedReason: "class_reset",
+            archivedAssessments: assessments.filter(
+              (a) => a.studentId === student.id,
+            ),
+            archivedRemarks: remarks.filter((r) => r.studentId === student.id),
+            archivedSkills: skills.filter((s) => s.studentId === student.id),
+            archivedAdminRemarks: adminRemarks,
+            archivedAttendanceSummary: {
+              total: attendanceTotal,
+              present: attendancePresent,
+              percentage: attendancePercentage,
+            },
+          });
+        }),
+      );
+      await Promise.all(archiveWrites);
+    }
+
+    const deletions = snap.docs.map((d) =>
+      deleteDoc(doc(firestore, "students", d.id)),
+    );
+    await Promise.all(deletions);
+    return snap.size;
+  }
+
+  async getStudentHistory(schoolId?: string): Promise<any[]> {
+    const scopedSchoolId = this.requireSchoolId(schoolId, "getStudentHistory");
+    const q = query(
+      collection(firestore, "students_archive"),
+      where("schoolId", "==", scopedSchoolId),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as any);
   }
 
   // --- Subjects ---
@@ -996,37 +1142,81 @@ class FirestoreService {
     schoolId: string,
     recordId: string,
     adminId: string,
+    options?: { teacherId?: string; date?: string },
   ): Promise<void> {
     const scopedSchoolId = this.requireSchoolId(
       schoolId,
       "approveTeacherAttendance",
     );
-    await updateDoc(doc(firestore, "teacher_attendance", recordId), {
+    const updatePayload = {
       schoolId: scopedSchoolId,
-      approvalStatus: "approved",
+      approvalStatus: "approved" as const,
       approvedBy: adminId,
       approvedAt: Date.now(),
       rejectedBy: null,
       rejectedAt: null,
-    });
+    };
+
+    if (options?.teacherId && options?.date) {
+      const q = query(
+        collection(firestore, "teacher_attendance"),
+        where("schoolId", "==", scopedSchoolId),
+        where("teacherId", "==", options.teacherId),
+        where("date", "==", options.date),
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        await Promise.all(
+          snap.docs.map((docSnap) => updateDoc(docSnap.ref, updatePayload)),
+        );
+        return;
+      }
+    }
+
+    await updateDoc(
+      doc(firestore, "teacher_attendance", recordId),
+      updatePayload,
+    );
   }
 
   async rejectTeacherAttendance(
     schoolId: string,
     recordId: string,
     adminId: string,
+    options?: { teacherId?: string; date?: string },
   ): Promise<void> {
     const scopedSchoolId = this.requireSchoolId(
       schoolId,
       "rejectTeacherAttendance",
     );
-    await updateDoc(doc(firestore, "teacher_attendance", recordId), {
+    const updatePayload = {
       schoolId: scopedSchoolId,
-      approvalStatus: "rejected",
-      status: "absent",
+      approvalStatus: "rejected" as const,
+      status: "absent" as const,
       rejectedBy: adminId,
       rejectedAt: Date.now(),
-    });
+    };
+
+    if (options?.teacherId && options?.date) {
+      const q = query(
+        collection(firestore, "teacher_attendance"),
+        where("schoolId", "==", scopedSchoolId),
+        where("teacherId", "==", options.teacherId),
+        where("date", "==", options.date),
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        await Promise.all(
+          snap.docs.map((docSnap) => updateDoc(docSnap.ref, updatePayload)),
+        );
+        return;
+      }
+    }
+
+    await updateDoc(
+      doc(firestore, "teacher_attendance", recordId),
+      updatePayload,
+    );
   }
 
   async getAllTeacherAttendanceRecords(
@@ -1071,6 +1261,24 @@ class FirestoreService {
   async saveAdminRemark(remark: AdminRemark): Promise<void> {
     this.requireSchoolId(remark.schoolId, "saveAdminRemark");
     await setDoc(doc(firestore, "admin_remarks", remark.id), remark);
+  }
+
+  async getAdminRemarksByStudent(
+    schoolId?: string,
+    studentId?: string,
+  ): Promise<AdminRemark[]> {
+    const scopedSchoolId = this.requireSchoolId(
+      schoolId,
+      "getAdminRemarksByStudent",
+    );
+    if (!studentId) return [];
+    const q = query(
+      collection(firestore, "admin_remarks"),
+      where("schoolId", "==", scopedSchoolId),
+      where("studentId", "==", studentId),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as AdminRemark);
   }
 
   /**
@@ -1255,45 +1463,6 @@ class FirestoreService {
 
       (async () => {
         const q = query(
-          collection(firestore, "student_remarks"),
-          where("schoolId", "==", schoolId),
-        );
-        const snap = await getDocs(q);
-        const deletions = snap.docs.map((d) =>
-          deleteDoc(doc(firestore, "student_remarks", d.id)),
-        );
-        await Promise.all(deletions);
-        console.log("Cleared student remarks.");
-      })(),
-
-      (async () => {
-        const q = query(
-          collection(firestore, "student_skills"),
-          where("schoolId", "==", schoolId),
-        );
-        const snap = await getDocs(q);
-        const deletions = snap.docs.map((d) =>
-          deleteDoc(doc(firestore, "student_skills", d.id)),
-        );
-        await Promise.all(deletions);
-        console.log("Cleared student skills.");
-      })(),
-
-      (async () => {
-        const q = query(
-          collection(firestore, "admin_remarks"),
-          where("schoolId", "==", schoolId),
-        );
-        const snap = await getDocs(q);
-        const deletions = snap.docs.map((d) =>
-          deleteDoc(doc(firestore, "admin_remarks", d.id)),
-        );
-        await Promise.all(deletions);
-        console.log("Cleared admin remarks.");
-      })(),
-
-      (async () => {
-        const q = query(
           collection(firestore, "admin_notifications"),
           where("schoolId", "==", schoolId),
         );
@@ -1333,18 +1502,10 @@ class FirestoreService {
       newTerm = currentTermNumber + 1;
     }
 
-    // Reset and seed assessments with the NEW term number (only once, with correct term)
-    for (const classId of classIds) {
-      await this.resetAssessmentsForClass(
-        currentConfig.schoolId,
-        classId,
-        true,
-        newTerm,
-      );
-      console.log(
-        `Reset and re-seeded assessments for class: ${classId} with term ${newTerm}`,
-      );
-    }
+    // Preserve assessments/remarks/skills/admin remarks for promotion.
+    console.log(
+      "Preserved assessments and report data for promotion. Skipping assessment reset.",
+    );
 
     const updatedConfig: SchoolConfig = {
       ...currentConfig,

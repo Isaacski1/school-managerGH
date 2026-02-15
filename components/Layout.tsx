@@ -39,6 +39,7 @@ import {
   Lock,
   BarChart3,
   Megaphone,
+  Archive,
 } from "lucide-react";
 
 interface LayoutProps {
@@ -453,6 +454,11 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                     label="Students"
                   />
                   <NavItem
+                    href="/admin/student-history"
+                    icon={Archive}
+                    label="Student History"
+                  />
+                  <NavItem
                     href="/admin/teachers"
                     icon={Users}
                     label="Teachers"
@@ -482,11 +488,6 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                     icon={CalendarDays}
                     label="Timetable"
                   />
-                  <NavItem
-                    href="/admin/settings"
-                    icon={Settings}
-                    label="Settings"
-                  />
                   {!isFreePlan && (
                     <NavItem
                       href="/admin/billing"
@@ -494,6 +495,11 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
                       label="Billing"
                     />
                   )}
+                  <NavItem
+                    href="/admin/settings"
+                    icon={Settings}
+                    label="Settings"
+                  />
                 </>
               )}
             </>

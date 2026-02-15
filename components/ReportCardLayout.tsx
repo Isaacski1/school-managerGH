@@ -321,6 +321,7 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
                   performance.map((p: any, i: number) => {
                     const grade = calculateGrade(p.total, data?.gradingScale);
                     let position = 0;
+                    let positionLabel = "-";
                     if (data?.positionRule === "subject") {
                       const subjectScores = data.allStudentsAssessments
                         .filter((a: any) => a.subject === p.subject)
@@ -330,6 +331,11 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
                     }
                     const positionSuffix =
                       ["st", "nd", "rd"][position - 1] || "th";
+                    if (data?.positionRule === "subject" && position) {
+                      positionLabel = `${position}${positionSuffix}`;
+                    } else if (data?.positionRule === "total") {
+                      positionLabel = summary?.classPosition || "-";
+                    }
 
                     return (
                       <tr key={i} className="hover:bg-slate-50">
@@ -352,9 +358,7 @@ const ReportCardLayout: React.FC<ReportCardLayoutProps> = ({ data }) => {
                           {p.total}
                         </td>
                         <td className="p-1.5 border text-center">
-                          {data?.positionRule === "subject" && position
-                            ? `${position}${positionSuffix}`
-                            : "-"}
+                          {positionLabel}
                         </td>
                         <td
                           className={`p-1.5 border text-center font-bold ${getGradeColor(grade.grade).split(" ")[0]}`}

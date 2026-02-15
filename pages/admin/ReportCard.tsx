@@ -266,14 +266,13 @@ const ReportCard = () => {
           : "";
 
       const isPromotionalTerm = schoolConfig.isPromotionalTerm ?? true;
-      const promotionStatus =
-        termNumber === 3 && isPromotionalTerm
-          ? totalScoreForPromotion >= PASS_THRESHOLD
-            ? nextClassName
-              ? `Promoted to ${nextClassName}`
-              : "Promoted"
-            : "Fail"
-          : "N/A";
+      const promotionStatus = isPromotionalTerm
+        ? totalScoreForPromotion >= PASS_THRESHOLD
+          ? nextClassName
+            ? `Promoted to ${nextClassName}`
+            : "Promoted"
+          : "Fail"
+        : "N/A";
 
       const data = {
         schoolInfo: {
@@ -300,6 +299,8 @@ const ReportCard = () => {
           attendancePercentage: attendancePercentage || 0,
         },
         performance: termAssessments || [],
+        positionRule: schoolConfig.positionRule || "subject",
+        gradingScale: schoolConfig.gradingScale,
         summary: {
           totalScore: totalScoreForPromotion || 0,
           averageScore:

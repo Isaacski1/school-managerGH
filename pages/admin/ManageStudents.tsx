@@ -4,7 +4,12 @@ import { showToast } from "../../services/toast";
 import { db } from "../../services/mockDb";
 import { useSchool } from "../../context/SchoolContext";
 import { Student } from "../../types";
-import { CLASSES_LIST, calculateGrade, getGradeColor } from "../../constants";
+import {
+  CLASS_PROMOTION_MAP,
+  CLASSES_LIST,
+  calculateGrade,
+  getGradeColor,
+} from "../../constants";
 import {
   Plus,
   Trash2,
@@ -18,6 +23,7 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
+  ArrowUpRight,
 } from "lucide-react";
 
 const ManageStudents = () => {
@@ -43,6 +49,20 @@ const ManageStudents = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   // Save button loading state
   const [isSaving, setIsSaving] = useState(false);
+  // Bulk Promotion State
+  const [showPromotionModal, setShowPromotionModal] = useState(false);
+  const [isPromoting, setIsPromoting] = useState(false);
+  const [promotionClassId, setPromotionClassId] = useState("c_p1");
+  const [promotionScores, setPromotionScores] = useState<
+    Record<string, number>
+  >({});
+  const [promotionPassMark, setPromotionPassMark] = useState(50);
+  const [promotionTermNumber, setPromotionTermNumber] = useState<1 | 2 | 3>(1);
+  const [promotionLoading, setPromotionLoading] = useState(false);
+  const [selectedPromoteIds, setSelectedPromoteIds] = useState<string[]>([]);
+  const [showResetClassModal, setShowResetClassModal] = useState(false);
+  const [resetClassId, setResetClassId] = useState("c_jhs3");
+  const [isResettingClass, setIsResettingClass] = useState(false);
 
   const fetchData = async () => {
     if (!schoolId) {
@@ -67,6 +87,20 @@ const ManageStudents = () => {
   useEffect(() => {
     fetchData();
   }, [schoolId]);
+
+  const parseTermNumber = (termString: string): 1 | 2 | 3 => {
+    let term = parseInt(termString);
+    if (!Number.isNaN(term) && term >= 1 && term <= 3) return term as 1 | 2 | 3;
+
+    const parts = termString.split(" ");
+    if (parts.length > 1) {
+      term = parseInt(parts[1]);
+      if (!Number.isNaN(term) && term >= 1 && term <= 3)
+        return term as 1 | 2 | 3;
+    }
+
+    return 1;
+  };
 
   // --- Logic for Performance View ---
   const handleViewPerformance = async (student: Student) => {
@@ -113,6 +147,18 @@ const ManageStudents = () => {
     setShowModal(true);
   };
 
+  const handleOpenPromotion = () => {
+    const initialClassId =
+      filterClass !== "all" ? filterClass : CLASSES_LIST[0]?.id || "c_p1";
+    setPromotionClassId(initialClassId);
+    setShowPromotionModal(true);
+  };
+
+  const handleOpenResetClass = () => {
+    setResetClassId(filterClass !== "all" ? filterClass : "c_jhs3");
+    setShowResetClassModal(true);
+  };
+
   const handleEdit = async (student: Student) => {
     setFormData(student);
     setEditingId(student.id);
@@ -133,6 +179,124 @@ const ManageStudents = () => {
     setFormData({ gender: "Male", classId: "c_p1", dob: "" });
     setEditingId(null);
     setPerformanceData(null);
+  };
+
+  const togglePromote = (id: string) => {
+    setSelectedPromoteIds((prev) =>
+      prev.includes(id)
+        ? prev.filter((existing) => existing !== id)
+        : [...prev, id],
+    );
+  };
+
+  useEffect(() => {
+    if (!showPromotionModal || !schoolId) return;
+
+    const loadPromotionData = async () => {
+      setPromotionLoading(true);
+      try {
+        const schoolConfig = await db.getSchoolConfig(schoolId);
+        const passMark =
+          typeof schoolConfig.passMark === "number"
+            ? schoolConfig.passMark
+            : 50;
+        const termNumber = parseTermNumber(schoolConfig.currentTerm || "");
+        setPromotionPassMark(passMark);
+        setPromotionTermNumber(termNumber);
+
+        const assessments = await db.getAllAssessments(schoolId);
+        const classAssessments = assessments.filter(
+          (a) => a.classId === promotionClassId && a.term === termNumber,
+        );
+        const totals = classAssessments.reduce(
+          (acc: Record<string, number>, assessment) => {
+            const total = assessment.total || 0;
+            acc[assessment.studentId] =
+              (acc[assessment.studentId] || 0) + total;
+            return acc;
+          },
+          {},
+        );
+
+        setPromotionScores(totals);
+
+        const classStudents = students.filter(
+          (student) => student.classId === promotionClassId,
+        );
+        const passedIds = classStudents
+          .filter((student) => (totals[student.id] || 0) >= passMark)
+          .map((student) => student.id);
+        setSelectedPromoteIds(passedIds);
+      } catch (error) {
+        console.error("Failed to load promotion data", error);
+        showToast("Failed to load promotion data. Please try again.", {
+          type: "error",
+        });
+      } finally {
+        setPromotionLoading(false);
+      }
+    };
+
+    loadPromotionData();
+  }, [showPromotionModal, promotionClassId, schoolId, students]);
+
+  const handleBulkPromotion = async () => {
+    if (!schoolId) return;
+
+    const selectedSet = new Set(selectedPromoteIds);
+    const classStudents = students.filter(
+      (student) => student.classId === promotionClassId,
+    );
+    const updates = classStudents
+      .filter((student) => selectedSet.has(student.id))
+      .map((student) => ({
+        id: student.id,
+        classId: CLASS_PROMOTION_MAP[student.classId],
+      }))
+      .filter((row) => row.classId);
+
+    if (updates.length === 0) {
+      showToast("No eligible students to promote.", { type: "info" });
+      return;
+    }
+
+    setIsPromoting(true);
+    try {
+      await db.updateStudentsClassBulk(schoolId, updates);
+      showToast(`Promoted ${updates.length} students.`, { type: "success" });
+      setShowPromotionModal(false);
+      await fetchData();
+    } catch (error) {
+      console.error("Promotion failed", error);
+      showToast("Failed to promote students. Please try again.", {
+        type: "error",
+      });
+    } finally {
+      setIsPromoting(false);
+    }
+  };
+
+  const handleResetClass = async () => {
+    if (!schoolId) return;
+    setIsResettingClass(true);
+    try {
+      const deletedCount = await db.deleteStudentsByClass(
+        schoolId,
+        resetClassId,
+      );
+      showToast(`Cleared ${deletedCount} students from the class.`, {
+        type: "success",
+      });
+      setShowResetClassModal(false);
+      await fetchData();
+    } catch (error) {
+      console.error("Reset class failed", error);
+      showToast("Failed to reset class. Please try again.", {
+        type: "error",
+      });
+    } finally {
+      setIsResettingClass(false);
+    }
   };
 
   const promptDelete = (id: string, e: React.MouseEvent) => {
@@ -400,13 +564,29 @@ const ManageStudents = () => {
                 ))}
               </select>
             </div>
-            <button
-              onClick={handleOpenAdd}
-              className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 text-white px-5 py-2 text-sm font-semibold shadow-sm transition hover:scale-[1.01] hover:bg-emerald-700"
-            >
-              <Plus size={16} />
-              Add Student
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleOpenPromotion}
+                className="flex items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 px-5 py-2 text-sm font-semibold shadow-sm transition hover:scale-[1.01] hover:bg-emerald-100"
+              >
+                <ArrowUpRight size={16} />
+                Promote Students
+              </button>
+              <button
+                onClick={handleOpenResetClass}
+                className="flex items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 text-rose-700 px-5 py-2 text-sm font-semibold shadow-sm transition hover:scale-[1.01] hover:bg-rose-100"
+              >
+                <XCircle size={16} />
+                Reset Class
+              </button>
+              <button
+                onClick={handleOpenAdd}
+                className="flex items-center justify-center gap-2 rounded-full bg-emerald-600 text-white px-5 py-2 text-sm font-semibold shadow-sm transition hover:scale-[1.01] hover:bg-emerald-700"
+              >
+                <Plus size={16} />
+                Add Student
+              </button>
+            </div>
           </div>
 
           {/* Cards */}
@@ -757,6 +937,288 @@ const ManageStudents = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Promotion Modal */}
+      {showPromotionModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    Promote Students
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Choose a class, then review pass/fail groups for promotion.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowPromotionModal(false)}
+                  className="text-slate-400 hover:text-slate-700 bg-white p-2 rounded-full shadow-sm"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const classStudents = students.filter(
+                (student) => student.classId === promotionClassId,
+              );
+              const passStudents = classStudents.filter(
+                (student) =>
+                  (promotionScores[student.id] || 0) >= promotionPassMark,
+              );
+              const failStudents = classStudents.filter(
+                (student) =>
+                  (promotionScores[student.id] || 0) < promotionPassMark,
+              );
+              const selectedSet = new Set(selectedPromoteIds);
+              const willPromoteCount = classStudents.filter((student) =>
+                selectedSet.has(student.id),
+              ).length;
+              const nextClassId = CLASS_PROMOTION_MAP[promotionClassId] ?? null;
+              const nextClassName = nextClassId
+                ? CLASSES_LIST.find((c) => c.id === nextClassId)?.name ||
+                  nextClassId
+                : "Graduating";
+
+              return (
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-400">
+                        Selected Class
+                      </p>
+                      <select
+                        value={promotionClassId}
+                        onChange={(e) => setPromotionClassId(e.target.value)}
+                        className="mt-2 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white text-slate-700 focus:ring-2 focus:ring-emerald-200"
+                      >
+                        {CLASSES_LIST.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
+                      <p className="text-xs uppercase tracking-wide text-emerald-500">
+                        Pass Mark (Term {promotionTermNumber})
+                      </p>
+                      <p className="mt-2 text-2xl font-bold text-emerald-700">
+                        {promotionPassMark}
+                      </p>
+                      <p className="text-[11px] text-emerald-600 mt-1">
+                        Next class: {nextClassName}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
+                      <p className="text-xs uppercase tracking-wide text-sky-500">
+                        Selected to Promote
+                      </p>
+                      <p className="mt-2 text-2xl font-bold text-sky-700">
+                        {willPromoteCount}
+                      </p>
+                      <p className="text-[11px] text-sky-600 mt-1">
+                        Total in class: {classStudents.length}
+                      </p>
+                    </div>
+                  </div>
+
+                  {promotionLoading ? (
+                    <div className="rounded-2xl border border-slate-100 bg-white p-6 text-center text-sm text-slate-500">
+                      Loading promotion data...
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-emerald-700">
+                            Passed (select to promote)
+                          </h4>
+                          <span className="text-xs text-emerald-600">
+                            {passStudents.length} students
+                          </span>
+                        </div>
+                        {passStudents.length === 0 ? (
+                          <p className="text-sm text-slate-500">
+                            No students passed for this term.
+                          </p>
+                        ) : (
+                          <div className="space-y-2 max-h-[320px] overflow-y-auto">
+                            {passStudents.map((student) => (
+                              <label
+                                key={student.id}
+                                className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-sm transition ${selectedSet.has(student.id) ? "border-emerald-200 bg-emerald-50/40" : "border-slate-200 bg-white"}`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSet.has(student.id)}
+                                    onChange={() => togglePromote(student.id)}
+                                    className="h-4 w-4 text-emerald-600"
+                                  />
+                                  <div>
+                                    <p className="font-semibold text-slate-800">
+                                      {student.name}
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                      Total: {promotionScores[student.id] || 0}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-xs text-slate-400">
+                                  ID: {student.id}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-rose-100 bg-white p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-rose-700">
+                            Failed (optional promotion)
+                          </h4>
+                          <span className="text-xs text-rose-600">
+                            {failStudents.length} students
+                          </span>
+                        </div>
+                        {failStudents.length === 0 ? (
+                          <p className="text-sm text-slate-500">
+                            No students failed for this term.
+                          </p>
+                        ) : (
+                          <div className="space-y-2 max-h-[320px] overflow-y-auto">
+                            {failStudents.map((student) => (
+                              <label
+                                key={student.id}
+                                className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-sm transition ${selectedSet.has(student.id) ? "border-rose-200 bg-rose-50/40" : "border-slate-200 bg-white"}`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSet.has(student.id)}
+                                    onChange={() => togglePromote(student.id)}
+                                    className="h-4 w-4 text-rose-600"
+                                  />
+                                  <div>
+                                    <p className="font-semibold text-slate-800">
+                                      {student.name}
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                      Total: {promotionScores[student.id] || 0}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-xs text-slate-400">
+                                  ID: {student.id}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPromotionModal(false)}
+                      className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBulkPromotion}
+                      disabled={
+                        isPromoting ||
+                        promotionLoading ||
+                        selectedPromoteIds.length === 0
+                      }
+                      className={`px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium shadow-sm transition-colors ${isPromoting || promotionLoading || selectedPromoteIds.length === 0 ? "opacity-60 cursor-not-allowed hover:bg-emerald-600" : "hover:bg-emerald-700"}`}
+                    >
+                      {isPromoting ? "Promoting..." : "Apply Promotion"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Reset Class Modal */}
+      {showResetClassModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    Reset Class
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    This removes all student profiles from the selected class.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowResetClassModal(false)}
+                  className="text-slate-400 hover:text-slate-700 bg-white p-2 rounded-full shadow-sm"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Select Class to Reset
+                </label>
+                <select
+                  value={resetClassId}
+                  onChange={(e) => setResetClassId(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white text-slate-700 focus:ring-2 focus:ring-rose-200"
+                >
+                  {CLASSES_LIST.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rounded-xl border border-rose-100 bg-rose-50/60 p-3 text-xs text-rose-700">
+                This action only deletes student profiles for the class. Reports
+                and historical data remain untouched.
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 p-6 pt-0">
+              <button
+                type="button"
+                onClick={() => setShowResetClassModal(false)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResetClass}
+                disabled={isResettingClass}
+                className={`px-4 py-2 bg-rose-600 text-white rounded-lg font-medium shadow-sm transition-colors ${isResettingClass ? "opacity-60 cursor-not-allowed hover:bg-rose-600" : "hover:bg-rose-700"}`}
+              >
+                {isResettingClass ? "Resetting..." : "Reset Class"}
+              </button>
+            </div>
           </div>
         </div>
       )}

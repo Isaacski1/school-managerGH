@@ -15,6 +15,7 @@ import { UserRole } from "./types";
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import ManageStudents from "./pages/admin/ManageStudents";
+import StudentHistory from "./pages/admin/StudentHistory";
 import ManageTeachers from "./pages/admin/ManageTeachers";
 import AttendanceStats from "./pages/admin/AttendanceStats";
 import TeacherAttendanceStats from "./pages/admin/TeacherAttendanceStats";
@@ -258,6 +259,14 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute allowedRoles={[UserRole.SCHOOL_ADMIN]}>
             <ManageStudents />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/student-history"
+        element={
+          <ProtectedRoute allowedRoles={[UserRole.SCHOOL_ADMIN]}>
+            <StudentHistory />
           </ProtectedRoute>
         }
       />

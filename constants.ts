@@ -19,6 +19,22 @@ export const CLASSES_LIST = [
   { id: "c_jhs3", name: "JHS 3", level: "JHS" },
 ];
 
+export const CLASS_PROMOTION_MAP: Record<string, string | null> = {
+  c_n1: "c_n2",
+  c_n2: "c_kg1",
+  c_kg1: "c_kg2",
+  c_kg2: "c_p1",
+  c_p1: "c_p2",
+  c_p2: "c_p3",
+  c_p3: "c_p4",
+  c_p4: "c_p5",
+  c_p5: "c_p6",
+  c_p6: "c_jhs1",
+  c_jhs1: "c_jhs2",
+  c_jhs2: "c_jhs3",
+  c_jhs3: null,
+};
+
 export const DEFAULT_SUBJECTS = [
   "Mathematics",
   "English Language",
@@ -102,7 +118,7 @@ export const getGradeColor = (grade: string) => {
     case "A":
       return "text-green-600 bg-green-100";
     case "B":
-      return "text-red-600 bg-red-100";
+      return "text-blue-600 bg-blue-100";
     case "C":
       return "text-yellow-600 bg-yellow-100";
     case "D":
