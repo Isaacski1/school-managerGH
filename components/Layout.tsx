@@ -15,6 +15,7 @@ import { db } from "../services/mockDb";
 import { firestore } from "../services/firebase";
 import { UserRole, SystemNotification } from "../types";
 import Toast from "./Toast";
+import InstallPrompt from "./InstallPrompt";
 
 import {
   LogOut,
@@ -323,6 +324,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
   return (
     <div className="h-screen bg-[#fafafa] flex">
+      <InstallPrompt />
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div
