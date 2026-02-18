@@ -1,4 +1,5 @@
 import React from "react";
+import schoolLogo from "../logo/apple-icon-180x180.png";
 
 type SplashScreenProps = {
   roleLabel?: string;
@@ -12,11 +13,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ roleLabel }) => {
 
       <div className="relative flex flex-col items-center">
         <div className="w-24 h-24 rounded-3xl bg-white/15 border border-white/20 flex items-center justify-center shadow-2xl animate-pulse">
-          <img
-            src="/logo/apple-icon-180x180.png"
-            alt="School Manager GH"
-            className="w-16 h-16"
-          />
+          <img src={schoolLogo} alt="School Manager GH" className="w-16 h-16" />
         </div>
         <h1 className="mt-6 text-2xl font-bold tracking-wide">
           School Manager GH
