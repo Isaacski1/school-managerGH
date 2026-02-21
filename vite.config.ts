@@ -17,8 +17,12 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: "autoUpdate",
         includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
-        workbox: {
-          inlineWorkboxRuntime: true,
+        strategies: "injectManifest",
+        srcDir: "src",
+        filename: "sw.ts",
+        injectManifest: {
+          rollupFormat: "iife",
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         },
         manifest: {
           name: "School Manager GH",
